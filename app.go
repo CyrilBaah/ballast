@@ -425,7 +425,7 @@ func (a *App) UploadStart(localPath, driveFolderId string) (int64, error) {
 		return 0, fmt.Errorf("upload: %w", err)
 	}
 
-	go a.runUpload(u.ID, svc, localPath, driveFolderId)
+	go a.runUpload(u.ID, svc, localPath, driveFolderId, info.Size())
 
 	return u.ID, nil
 }
@@ -433,9 +433,16 @@ func (a *App) UploadStart(localPath, driveFolderId string) (int64, error) {
 // runUpload performs the actual transfer and records its outcome. Runs on
 // the app's lifetime context (not a per-request context, since it
 // continues after UploadStart has already returned the UploadId to the
-// frontend).
-func (a *App) runUpload(id int64, svc *drivev3.Service, localPath, driveFolderID string) {
-	result, err := drive.UploadFile(a.ctx, svc, localPath, driveFolderID)
+// frontend). drive.UploadFile emits the upload:progress/upload:complete/
+// upload:failed events itself (T035); this method's job is solely to keep
+// the persisted Upload row's bytes_sent/status in sync with those outcomes.
+func (a *App) runUpload(id int64, svc *drivev3.Service, localPath, driveFolderID string, totalBytes int64) {
+	onProgress := func(bytesSent int64) {
+		if err := a.db.UpdateUploadProgress(id, bytesSent); err != nil {
+			logging.Warn("failed to record upload progress", "uploadId", id, "error", err)
+		}
+	}
+	result, err := drive.UploadFile(a.ctx, svc, id, localPath, driveFolderID, totalBytes, onProgress)
 	if err != nil {
 		if setErr := a.db.SetUploadFailed(id, err.Error()); setErr != nil {
 			logging.Warn("failed to record upload failure", "uploadId", id, "error", setErr)

@@ -3,6 +3,7 @@ import './app.css';
 
 import { renderSignIn } from './screens/signin';
 import { renderPicker } from './screens/picker';
+import { renderProgress } from './screens/progress';
 import type { AuthStatus } from './api/auth';
 import type { LocalFileRef } from './api/files';
 
@@ -24,16 +25,12 @@ function showPicker(status: AuthStatus) {
         container: app,
         email: status.email,
         onUploadStarted: (uploadId: number, file: LocalFileRef) => {
-            // The upload progress/result screen (User Story 3) replaces
-            // this placeholder in a later phase of this feature.
             teardown?.();
-            teardown = null;
-            app.innerHTML = `
-                <div class="progress-screen">
-                    <h1>Ballast</h1>
-                    <p>Uploading ${file.name}… (upload #${uploadId})</p>
-                </div>
-            `;
+            teardown = renderProgress({
+                container: app,
+                uploadId,
+                fileName: file.name,
+            });
         },
     });
 }

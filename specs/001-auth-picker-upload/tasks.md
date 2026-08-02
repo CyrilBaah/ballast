@@ -135,14 +135,14 @@ link) or `upload:failed` (with reason) always fires — never neither
 
 ### Tests for User Story 3
 
-- [ ] T032 [P] [US3] Playwright test covering quickstart.md Scenario 3 (progress event cadence, success confirmation with link, failure messaging) in `frontend/tests/upload-progress.spec.ts`
-- [ ] T033 [P] [US3] Go unit tests for the counting-reader progress wrapper's throttling (~1/s emit, non-decreasing bytes) in `internal/drive/progress_test.go`
+- [X] T032 [P] [US3] Playwright test covering quickstart.md Scenario 3 (progress event cadence, success confirmation with link, failure messaging) in `frontend/tests/upload-progress.spec.ts`
+- [X] T033 [P] [US3] Go unit tests for the counting-reader progress wrapper's throttling (~1/s emit, non-decreasing bytes) in `internal/drive/progress_test.go`
 
 ### Implementation for User Story 3
 
-- [ ] T034 [US3] Implement the counting-reader wrapper that emits `upload:progress` (throttled to ~1/s, comfortably inside SC-004's 5s bound) in `internal/drive/progress.go`
-- [ ] T035 [US3] Emit terminal `upload:complete` / `upload:failed` events from the upload flow, guaranteeing exactly one always fires for an `in_progress` upload, in `internal/drive/upload.go`
-- [ ] T036 [US3] Build the upload progress/result screen listening for `upload:progress`, `upload:complete`, and `upload:failed` in `frontend/src/screens/progress.ts`
+- [X] T034 [US3] Implement the counting-reader wrapper that emits `upload:progress` (throttled to ~1/s, comfortably inside SC-004's 5s bound) in `internal/drive/progress.go`
+- [X] T035 [US3] Emit terminal `upload:complete` / `upload:failed` events from the upload flow, guaranteeing exactly one always fires for an `in_progress` upload, in `internal/drive/upload.go`
+- [X] T036 [US3] Build the upload progress/result screen listening for `upload:progress`, `upload:complete`, and `upload:failed` in `frontend/src/screens/progress.ts`
 
 **Checkpoint**: All three user stories independently functional — full feature complete
 
@@ -152,8 +152,8 @@ link) or `upload:failed` (with reason) always fires — never neither
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T037 [P] Add a Quickstart section to `README.md` (it currently has none) with `wails dev` run instructions
-- [ ] T038 Audit all log output at every level to confirm no credential values (tokens, ciphertext, keychain material) are ever logged (Constitution Principle IV)
+- [X] T037 [P] Add a Quickstart section to `README.md` (it currently has none) with `wails dev` run instructions
+- [X] T038 Audit all log output at every level to confirm no credential values (tokens, ciphertext, keychain material) are ever logged (Constitution Principle IV)
 - [ ] T039 [P] Run `quickstart.md` Scenarios 1–3 manually end-to-end against a real Google test account, verifying SC-003 ("verifiably present in Drive") specifically, since CI's mocked run cannot prove it
 - [ ] T040 Run CI across macOS/Windows/Linux and confirm the keychain-unavailable fallback message (T021) actually appears on a Linux runner without a keyring daemon (Constitution Principle VII)
 

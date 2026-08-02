@@ -132,3 +132,25 @@
     opacity: 0.6;
     padding: 0.4rem 0;
 }
+
+.progress-file {
+    opacity: 0.85;
+}
+
+.progress-bytes {
+    opacity: 0.7;
+    min-height: 1.2em;
+}
+
+.progress-result {
+    min-height: 1.2em;
+    font-weight: 600;
+}
+
+.progress-result--success {
+    color: #2f9e44;
+}
+
+.progress-result--failed {
+    color: #ff6b6b;
+}
