@@ -107,7 +107,30 @@ not the Go backend directly.
 
 > **Fill ONLY if Constitution Check has violations that must be justified**
 
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+No violations. Not applicable — see Constitution Check above.
+
+## Post-Design Constitution Check (re-evaluated after Phase 1)
+
+Per the constitution's Compliance Review requirement, the gate above was
+re-checked against the concrete design in data-model.md and
+contracts/wails-bindings.md:
+
+- **I. Stack Discipline**: Still Go + Wails + SQLite only; no library added
+  during design beyond those already named in Technical Context. **PASS**.
+- **IV. Security by Default**: data-model.md's Account entity confirms
+  tokens are stored only as ciphertext + nonce columns, with sign-out
+  revoking the OAuth grant server-side and deleting the row outright (no
+  lingering plaintext-adjacent state, no lingering server-side grant).
+  **PASS**.
+- **V. Simplicity & Bounded Scope**: contracts/wails-bindings.md exposes
+  exactly the methods/events the three user stories need (auth, file pick,
+  folder list, upload start/status) — no speculative endpoints (e.g. no
+  multi-file batch upload, no folder create/rename) crept in during design.
+  **PASS**.
+- **VII. Cross-Platform Parity**: The keychain fail-closed fallback
+  (research.md §4) is carried through unchanged into `Auth.SignIn()`'s
+  documented rejection behavior in the contract. **PASS**.
+- Principles II, III, VI remain **N/A** — the design introduces no
+  resumable-protocol, chunking, or retry-classification logic.
+
+No new violations surfaced during design; Complexity Tracking remains empty.
