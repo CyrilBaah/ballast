@@ -36,11 +36,11 @@ to enable independent implementation and testing of each story.
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Initialize the Wails project skeleton (`wails init` vanilla-ts template) matching plan.md's Project Structure, producing `main.go`, `wails.json`, and `frontend/` scaffolding at the repo root
-- [ ] T002 [P] Add Go module dependencies (`google.golang.org/api/drive/v3`, `golang.org/x/oauth2`, `golang.org/x/oauth2/google`, `modernc.org/sqlite`, `github.com/zalando/go-keyring`) to `go.mod`
-- [ ] T003 [P] Configure Go linting/formatting (`gofmt`, `go vet`, golangci-lint) in `.golangci.yml`
-- [ ] T004 [P] Set up Playwright in the frontend project (`frontend/package.json` dev dependency, `frontend/playwright.config.ts`) pointed at `wails dev`'s server (`http://localhost:34115`, per research.md §5)
-- [ ] T005 [P] Create GitHub Actions CI workflow running `go build`/`go vet`/`go test` and the Playwright suite across macOS/Windows/Linux runners in `.github/workflows/ci.yml`
+- [X] T001 Initialize the Wails project skeleton (`wails init` vanilla-ts template) matching plan.md's Project Structure, producing `main.go`, `wails.json`, and `frontend/` scaffolding at the repo root
+- [X] T002 [P] Add Go module dependencies (`google.golang.org/api/drive/v3`, `golang.org/x/oauth2`, `golang.org/x/oauth2/google`, `modernc.org/sqlite`, `github.com/zalando/go-keyring`) to `go.mod`
+- [X] T003 [P] Configure Go linting/formatting (`gofmt`, `go vet`, golangci-lint) in `.golangci.yml`
+- [X] T004 [P] Set up Playwright in the frontend project (`frontend/package.json` dev dependency, `frontend/playwright.config.ts`) pointed at `wails dev`'s server (`http://localhost:34115`, per research.md §5)
+- [X] T005 [P] Create GitHub Actions CI workflow running `go build`/`go vet`/`go test` and the Playwright suite across macOS/Windows/Linux runners in `.github/workflows/ci.yml`
 
 ---
 
