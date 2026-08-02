@@ -47,6 +47,7 @@ func maybeInstallE2EMock(a *App) {
 	a.userInfoURL = mock.URL + "/userinfo"
 	a.revokeEndpoint = mock.URL + "/revoke"
 	a.openBrowser = e2eBrowserOpener
+	a.driveAPIEndpointOverride = mock.URL
 }
 
 // newE2EMockServer starts an in-process HTTP server standing in for
@@ -78,6 +79,43 @@ func newE2EMockServer() *httptest.Server {
 
 	mux.HandleFunc("/revoke", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
+	})
+
+	// Drive API mocks (research.md §5 / quickstart.md's CI notes: mock
+	// Drive API responses too, not just OAuth). Files.List: always
+	// reports no existing folders, so the frontend/Playwright suite
+	// exercises "My Drive" as the only destination (Acceptance Scenario 2
+	// of User Story 2) without needing seeded test-account state.
+	mux.HandleFunc("/files", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"files": []map[string]string{}})
+	})
+
+	// Files.Create (simple/multipart, non-resumable -- research.md §3).
+	// Outcome "network-fail" (set via BALLAST_E2E_OUTCOME_FILE, same
+	// mechanism as the OAuth approve/deny toggle) simulates a connection
+	// drop mid-upload (Acceptance Scenario 4 of User Story 2) by hijacking
+	// and closing the connection without a response, rather than a clean
+	// HTTP error -- closer to what an actual network loss looks like to
+	// the client.
+	mux.HandleFunc("/upload/drive/v3/files", func(w http.ResponseWriter, r *http.Request) {
+		if readE2EOutcome() == "network-fail" {
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			conn, _, err := hj.Hijack()
+			if err == nil {
+				conn.Close()
+			}
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":          "e2e-mock-file-id",
+			"webViewLink": "https://drive.google.com/file/d/e2e-mock-file-id/view",
+		})
 	})
 
 	return httptest.NewServer(mux)

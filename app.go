@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"ballast/internal/auth"
+	"ballast/internal/drive"
 	"ballast/internal/events"
 	"ballast/internal/keychain"
 	"ballast/internal/logging"
@@ -17,6 +19,10 @@ import (
 	"github.com/pkg/browser"
 	oauth2pkg "golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	drivev3 "google.golang.org/api/drive/v3"
+	"google.golang.org/api/option"
+
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App is the single struct Wails binds to the frontend. Its methods are the
@@ -49,6 +55,10 @@ type App struct {
 	revokeEndpoint        string
 	openBrowser           auth.BrowserOpener
 	oauthEndpointOverride *oauth2pkg.Endpoint
+	// driveAPIEndpointOverride points the Drive API client at an
+	// in-process mock server in the E2E-mocked dev build (mock_e2e.go);
+	// empty in production, which uses the real Drive API.
+	driveAPIEndpointOverride string
 }
 
 // NewApp creates a new App application struct. Construction does not touch
@@ -284,4 +294,179 @@ func (a *App) silentlyRefresh(acct *storage.Account) error {
 		Expiry:       tok.Expiry,
 	}
 	return a.persistSession(session)
+}
+
+// --- Files.* (contracts/wails-bindings.md) --------------------------------
+
+// LocalFileRef mirrors contracts/wails-bindings.md's LocalFileRef type.
+type LocalFileRef struct {
+	Path      string `json:"path"`
+	Name      string `json:"name"`
+	SizeBytes int64  `json:"sizeBytes"`
+}
+
+// FilesPickLocal opens the native OS file-picker dialog in single-select
+// mode (contract: Files.PickLocal; FR-004's "exactly one file"). Returns
+// nil if the user cancels the dialog.
+func (a *App) FilesPickLocal() (*LocalFileRef, error) {
+	path, err := wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title: "Select a file to upload",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("files: open dialog: %w", err)
+	}
+	if path == "" {
+		return nil, nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("files: could not read the selected file: %w", err)
+	}
+	return &LocalFileRef{Path: path, Name: filepath.Base(path), SizeBytes: info.Size()}, nil
+}
+
+// --- Drive.* (contracts/wails-bindings.md) ---------------------------------
+
+// DriveListFolders lists child folders of parentId ("" means the Drive
+// root, "My Drive" -- Acceptance Scenario 2 of User Story 2). Requires a
+// signed-in session (FR-001).
+func (a *App) DriveListFolders(parentId string) ([]drive.Folder, error) {
+	svc, err := a.driveService(a.ctx)
+	if err != nil {
+		return nil, err
+	}
+	return drive.ListFolders(a.ctx, svc, parentId)
+}
+
+// driveService builds an authenticated Drive API client for the current
+// session, refreshing the access token first if it's near expiry. Returns
+// errSignedOut if there is no valid session -- the single FR-001 gate all
+// Drive/Upload methods share.
+func (a *App) driveService(ctx context.Context) (*drivev3.Service, error) {
+	if err := a.requireSignedIn(); err != nil {
+		return nil, err
+	}
+	acct, err := a.db.GetAccount()
+	if err != nil {
+		return nil, errSignedOut
+	}
+
+	if auth.NeedsRefresh(acct.AccessTokenExpiry) {
+		if err := a.silentlyRefresh(acct); err != nil {
+			logging.Warn("silent token refresh failed before Drive call; clearing local session", "error", err)
+			_ = a.db.DeleteAccount()
+			events.EmitAuthChanged(a.ctx, events.AuthStatus{SignedIn: false})
+			return nil, errSignedOut
+		}
+		acct, err = a.db.GetAccount()
+		if err != nil {
+			return nil, errSignedOut
+		}
+	}
+
+	accessPlain, err := storage.Decrypt(a.encKey, acct.AccessTokenCiphertext, acct.AccessTokenNonce)
+	if err != nil {
+		return nil, fmt.Errorf("drive: decrypt access token: %w", err)
+	}
+	tok := &oauth2pkg.Token{AccessToken: string(accessPlain), Expiry: acct.AccessTokenExpiry}
+	client := a.oauthConfig().Client(ctx, tok)
+
+	opts := []option.ClientOption{option.WithHTTPClient(client)}
+	if a.driveAPIEndpointOverride != "" {
+		opts = append(opts, option.WithEndpoint(a.driveAPIEndpointOverride))
+	}
+	svc, err := drivev3.NewService(ctx, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("drive: build client: %w", err)
+	}
+	return svc, nil
+}
+
+// --- Upload.* (contracts/wails-bindings.md) ---------------------------------
+
+// UploadStatusDTO mirrors contracts/wails-bindings.md's UploadStatus type.
+type UploadStatusDTO struct {
+	Status        string `json:"status"`
+	BytesSent     int64  `json:"bytesSent"`
+	TotalBytes    int64  `json:"totalBytes"`
+	DriveFileLink string `json:"driveFileLink,omitempty"`
+	FailureReason string `json:"failureReason,omitempty"`
+}
+
+// UploadStart validates the local file still exists (FR-011), creates an
+// Upload row, and begins the non-resumable transfer in the background.
+// Requires a signed-in session; rejects with errSignedOut (a distinct auth
+// error, not a generic upload failure) if called while signed out
+// (FR-001) -- checked, like the file-existence check, before any Upload
+// row is created.
+func (a *App) UploadStart(localPath, driveFolderId string) (int64, error) {
+	if err := a.requireSignedIn(); err != nil {
+		return 0, err
+	}
+	if a.db == nil {
+		return 0, fmt.Errorf("upload: local database is unavailable")
+	}
+
+	info, err := os.Stat(localPath)
+	if err != nil {
+		return 0, fmt.Errorf("upload: local file can no longer be found: %w", err)
+	}
+
+	svc, err := a.driveService(a.ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	u, err := a.db.CreateUpload(localPath, info.Size(), driveFolderId)
+	if err != nil {
+		return 0, fmt.Errorf("upload: create upload record: %w", err)
+	}
+	if err := a.db.SetUploadInProgress(u.ID); err != nil {
+		return 0, fmt.Errorf("upload: %w", err)
+	}
+
+	go a.runUpload(u.ID, svc, localPath, driveFolderId)
+
+	return u.ID, nil
+}
+
+// runUpload performs the actual transfer and records its outcome. Runs on
+// the app's lifetime context (not a per-request context, since it
+// continues after UploadStart has already returned the UploadId to the
+// frontend).
+func (a *App) runUpload(id int64, svc *drivev3.Service, localPath, driveFolderID string) {
+	result, err := drive.UploadFile(a.ctx, svc, localPath, driveFolderID)
+	if err != nil {
+		if setErr := a.db.SetUploadFailed(id, err.Error()); setErr != nil {
+			logging.Warn("failed to record upload failure", "uploadId", id, "error", setErr)
+		}
+		return
+	}
+	if setErr := a.db.SetUploadSucceeded(id, result.FileID, result.WebViewLink); setErr != nil {
+		logging.Warn("failed to record upload success", "uploadId", id, "error", setErr)
+	}
+}
+
+// UploadGetStatus is a point-in-time read of an Upload's state, for
+// reconnecting the UI after a reload (contract: Upload.GetStatus).
+func (a *App) UploadGetStatus(id int64) (UploadStatusDTO, error) {
+	if a.db == nil {
+		return UploadStatusDTO{}, fmt.Errorf("upload: local database is unavailable")
+	}
+	u, err := a.db.GetUpload(id)
+	if err != nil {
+		return UploadStatusDTO{}, err
+	}
+	dto := UploadStatusDTO{
+		Status:     string(u.Status),
+		BytesSent:  u.BytesSent,
+		TotalBytes: u.LocalSizeBytes,
+	}
+	if u.DriveFileLink != nil {
+		dto.DriveFileLink = *u.DriveFileLink
+	}
+	if u.FailureReason != nil {
+		dto.FailureReason = *u.FailureReason
+	}
+	return dto, nil
 }

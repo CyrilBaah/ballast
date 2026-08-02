@@ -89,3 +89,46 @@
     color: #ffb020;
     font-weight: 600;
 }
+
+.picker-account {
+    opacity: 0.8;
+}
+
+.picker-file {
+    margin: 1.5rem 0;
+}
+
+.picker-file-name {
+    opacity: 0.85;
+    min-height: 1.2em;
+}
+
+.picker-folders {
+    text-align: left;
+    margin: 1.5rem 0;
+}
+
+.picker-breadcrumb {
+    opacity: 0.8;
+}
+
+.picker-breadcrumb a {
+    cursor: pointer;
+}
+
+.picker-folder-list {
+    list-style: none;
+    padding: 0;
+    margin: 0.5rem 0;
+}
+
+.picker-folder-item {
+    width: 100%;
+    text-align: left;
+    margin-bottom: 0.4rem;
+}
+
+.picker-folder-empty {
+    opacity: 0.6;
+    padding: 0.4rem 0;
+}

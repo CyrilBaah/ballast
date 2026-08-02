@@ -104,19 +104,19 @@ and a network-loss mid-upload both fail clearly rather than hang
 
 ### Tests for User Story 2
 
-- [ ] T022 [P] [US2] Playwright test covering quickstart.md Scenario 2 (pick file, list folders, start upload, file-vanished-before-upload case, network-loss failure) in `frontend/tests/upload-flow.spec.ts`
-- [ ] T023 [P] [US2] Go unit tests for the Drive folder-listing query construction (mimeType filter, parent-folder scoping, root handling) in `internal/drive/folders_test.go`
-- [ ] T024 [P] [US2] Go unit tests for `Upload` row state transitions (`pending → in_progress → succeeded|failed`) in `internal/storage/upload_test.go`
+- [X] T022 [P] [US2] Playwright test covering quickstart.md Scenario 2 (pick file, list folders, start upload, file-vanished-before-upload case, network-loss failure) in `frontend/tests/upload-flow.spec.ts`
+- [X] T023 [P] [US2] Go unit tests for the Drive folder-listing query construction (mimeType filter, parent-folder scoping, root handling) in `internal/drive/folders_test.go`
+- [X] T024 [P] [US2] Go unit tests for `Upload` row state transitions (`pending → in_progress → succeeded|failed`) in `internal/storage/upload_test.go`
 
 ### Implementation for User Story 2
 
-- [ ] T025 [P] [US2] Implement `Upload` row persistence and state-transition logic per data-model.md in `internal/storage/upload.go`
-- [ ] T026 [P] [US2] Implement the Drive folder-listing client wrapper (`Files.List` filtered to folders, `PARENT_ID` scoping, `"root"` for My Drive) in `internal/drive/folders.go`
-- [ ] T027 [US2] Implement the native local-file-picker binding (`Files.PickLocal`, Wails runtime dialog, single-select mode per FR-004's "exactly one file") in `app.go`
-- [ ] T028 [US2] Implement the `Drive.ListFolders` Wails-bound method (rejects when signed out, per FR-001) in `app.go`
-- [ ] T029 [US2] Implement the non-resumable Drive upload (`Files.Create(...).Media(reader, googleapi.ChunkSize(0))`), re-stating the local file immediately before starting to catch a vanished file (FR-011), in `internal/drive/upload.go`
-- [ ] T030 [US2] Implement `Upload.Start` (rejecting with a distinct auth error when signed out, per FR-001 — not a generic upload failure) and `Upload.GetStatus` Wails-bound methods in `app.go`
-- [ ] T031 [US2] Build the file+folder picker screen calling `Files.PickLocal`, `Drive.ListFolders`, and `Upload.Start` in `frontend/src/screens/picker.ts`
+- [X] T025 [P] [US2] Implement `Upload` row persistence and state-transition logic per data-model.md in `internal/storage/upload.go`
+- [X] T026 [P] [US2] Implement the Drive folder-listing client wrapper (`Files.List` filtered to folders, `PARENT_ID` scoping, `"root"` for My Drive) in `internal/drive/folders.go`
+- [X] T027 [US2] Implement the native local-file-picker binding (`Files.PickLocal`, Wails runtime dialog, single-select mode per FR-004's "exactly one file") in `app.go`
+- [X] T028 [US2] Implement the `Drive.ListFolders` Wails-bound method (rejects when signed out, per FR-001) in `app.go`
+- [X] T029 [US2] Implement the non-resumable Drive upload (`Files.Create(...).Media(reader, googleapi.ChunkSize(0))`), re-stating the local file immediately before starting to catch a vanished file (FR-011), in `internal/drive/upload.go`
+- [X] T030 [US2] Implement `Upload.Start` (rejecting with a distinct auth error when signed out, per FR-001 — not a generic upload failure) and `Upload.GetStatus` Wails-bound methods in `app.go`
+- [X] T031 [US2] Build the file+folder picker screen calling `Files.PickLocal`, `Drive.ListFolders`, and `Upload.Start` in `frontend/src/screens/picker.ts`
 
 **Checkpoint**: User Stories 1 AND 2 both work independently
 

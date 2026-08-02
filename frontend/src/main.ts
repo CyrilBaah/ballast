@@ -2,7 +2,9 @@ import './style.css';
 import './app.css';
 
 import { renderSignIn } from './screens/signin';
+import { renderPicker } from './screens/picker';
 import type { AuthStatus } from './api/auth';
+import type { LocalFileRef } from './api/files';
 
 const app = document.querySelector<HTMLElement>('#app')!;
 
@@ -12,21 +14,28 @@ function showSignIn() {
     teardown?.();
     teardown = renderSignIn({
         container: app,
-        onSignedIn: (status: AuthStatus) => showSignedIn(status),
+        onSignedIn: (status: AuthStatus) => showPicker(status),
     });
 }
 
-function showSignedIn(status: AuthStatus) {
+function showPicker(status: AuthStatus) {
     teardown?.();
-    teardown = null;
-    // The picker screen (User Story 2) and progress screen (User Story 3)
-    // replace this placeholder in later phases of this feature.
-    app.innerHTML = `
-        <div class="picker-screen">
-            <h1>Ballast</h1>
-            <p>Signed in as ${status.email ?? 'unknown'}.</p>
-        </div>
-    `;
+    teardown = renderPicker({
+        container: app,
+        email: status.email,
+        onUploadStarted: (uploadId: number, file: LocalFileRef) => {
+            // The upload progress/result screen (User Story 3) replaces
+            // this placeholder in a later phase of this feature.
+            teardown?.();
+            teardown = null;
+            app.innerHTML = `
+                <div class="progress-screen">
+                    <h1>Ballast</h1>
+                    <p>Uploading ${file.name}… (upload #${uploadId})</p>
+                </div>
+            `;
+        },
+    });
 }
 
 showSignIn();

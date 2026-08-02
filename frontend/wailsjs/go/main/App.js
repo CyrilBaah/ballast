@@ -13,3 +13,19 @@ export function AuthSignIn() {
 export function AuthSignOut() {
   return window['go']['main']['App']['AuthSignOut']();
 }
+
+export function DriveListFolders(arg1) {
+  return window['go']['main']['App']['DriveListFolders'](arg1);
+}
+
+export function FilesPickLocal() {
+  return window['go']['main']['App']['FilesPickLocal']();
+}
+
+export function UploadGetStatus(arg1) {
+  return window['go']['main']['App']['UploadGetStatus'](arg1);
+}
+
+export function UploadStart(arg1, arg2) {
+  return window['go']['main']['App']['UploadStart'](arg1, arg2);
+}
