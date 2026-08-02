@@ -52,3 +52,40 @@
     border: none;
     background-color: rgba(255, 255, 255, 1);
 }
+
+.signin-screen,
+.picker-screen,
+.progress-screen {
+    max-width: 480px;
+    margin: 10vh auto 0;
+    text-align: center;
+    padding: 0 1.5rem;
+}
+
+.btn {
+    border-radius: 6px;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.signin-status {
+    opacity: 0.8;
+    min-height: 1.2em;
+}
+
+.signin-error {
+    color: #ff6b6b;
+    min-height: 1.2em;
+}
+
+.signin-error--keychain {
+    color: #ffb020;
+    font-weight: 600;
+}

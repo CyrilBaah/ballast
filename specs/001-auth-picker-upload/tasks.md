@@ -73,19 +73,19 @@ capabilities are no longer reachable (quickstart.md Scenario 1).
 
 ### Tests for User Story 1
 
-- [ ] T013 [P] [US1] Playwright test covering quickstart.md Scenario 1 (sign-in, persistence across relaunch, sign-out, cancel/deny mid-flow) in `frontend/tests/auth.spec.ts`
-- [ ] T014 [P] [US1] Go unit tests for AES-256-GCM token encryption/decryption round-trip in `internal/storage/crypto_test.go`
-- [ ] T015 [P] [US1] Go unit tests for the OAuth loopback+PKCE request/response handling, with the HTTP exchange mocked, in `internal/auth/oauth_test.go`
-- [ ] T015a [P] [US1] Go unit test for `Auth.SignOut`'s revoke-endpoint call (mocked HTTP: verify request shape/token, and that local Account deletion still proceeds when the mocked call fails) in `internal/auth/revoke_test.go`
+- [X] T013 [P] [US1] Playwright test covering quickstart.md Scenario 1 (sign-in, persistence across relaunch, sign-out, cancel/deny mid-flow) in `frontend/tests/auth.spec.ts`
+- [X] T014 [P] [US1] Go unit tests for AES-256-GCM token encryption/decryption round-trip in `internal/storage/crypto_test.go`
+- [X] T015 [P] [US1] Go unit tests for the OAuth loopback+PKCE request/response handling, with the HTTP exchange mocked, in `internal/auth/oauth_test.go`
+- [X] T015a [P] [US1] Go unit test for `Auth.SignOut`'s revoke-endpoint call (mocked HTTP: verify request shape/token, and that local Account deletion still proceeds when the mocked call fails) in `internal/auth/revoke_test.go`
 
 ### Implementation for User Story 1
 
-- [ ] T016 [US1] Implement `Account` row persistence — create on sign-in, delete (not flag) on sign-out, enforcing the single-account constraint at the application layer (data-model.md) — in `internal/storage/account.go`
-- [ ] T017 [US1] Implement the OAuth 2.0 loopback+PKCE flow (local listener on an OS-assigned port, opens system browser, exchanges code, requests `drive.file` + `drive.metadata.readonly` scopes) in `internal/auth/oauth.go`
-- [ ] T018 [US1] Implement `Auth.GetStatus`, `Auth.SignIn`, `Auth.SignOut` Wails-bound methods on the `App` struct, emitting `auth:changed`, in `app.go` — `Auth.SignOut` MUST call Google's OAuth revocation endpoint (`https://oauth2.googleapis.com/revoke`) with the stored refresh token before deleting the `Account` row (FR-003); proceed with local deletion even if the revoke call fails
-- [ ] T019 [US1] Implement silent access-token refresh (check `access_token_expiry` before Drive API calls) in `internal/auth/refresh.go`
-- [ ] T020 [US1] Build the sign-in screen calling `Auth.GetStatus`/`Auth.SignIn` and reacting to `auth:changed` in `frontend/src/screens/signin.ts`
-- [ ] T021 [US1] Surface the fail-closed keychain-unavailable error (research.md §4) as a clear, specific message in `frontend/src/screens/signin.ts`
+- [X] T016 [US1] Implement `Account` row persistence — create on sign-in, delete (not flag) on sign-out, enforcing the single-account constraint at the application layer (data-model.md) — in `internal/storage/account.go`
+- [X] T017 [US1] Implement the OAuth 2.0 loopback+PKCE flow (local listener on an OS-assigned port, opens system browser, exchanges code, requests `drive.file` + `drive.metadata.readonly` scopes) in `internal/auth/oauth.go`
+- [X] T018 [US1] Implement `Auth.GetStatus`, `Auth.SignIn`, `Auth.SignOut` Wails-bound methods on the `App` struct, emitting `auth:changed`, in `app.go` — `Auth.SignOut` MUST call Google's OAuth revocation endpoint (`https://oauth2.googleapis.com/revoke`) with the stored refresh token before deleting the `Account` row (FR-003); proceed with local deletion even if the revoke call fails
+- [X] T019 [US1] Implement silent access-token refresh (check `access_token_expiry` before Drive API calls) in `internal/auth/refresh.go`
+- [X] T020 [US1] Build the sign-in screen calling `Auth.GetStatus`/`Auth.SignIn` and reacting to `auth:changed` in `frontend/src/screens/signin.ts`
+- [X] T021 [US1] Surface the fail-closed keychain-unavailable error (research.md §4) as a clear, specific message in `frontend/src/screens/signin.ts`
 
 **Checkpoint**: User Story 1 is fully functional and independently testable
 

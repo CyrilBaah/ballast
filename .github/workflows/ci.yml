@@ -57,9 +57,16 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
-      - name: Run wails dev in background
+      - name: Run wails dev in background (OAuth/Drive mocked at the network boundary)
         working-directory: .
         shell: bash
+        env:
+          # research.md §5 / quickstart.md's CI notes: mock Google OAuth
+          # consent + Drive API responses at the network boundary so the
+          # Playwright suite needs neither a real Google account nor real
+          # network access. See mock_e2e.go.
+          BALLAST_E2E_MOCK: "1"
+          BALLAST_E2E_OUTCOME_FILE: "${{ github.workspace }}/e2e-outcome.txt"
         run: |
           nohup "$(go env GOPATH)/bin/wails" dev > wails-dev.log 2>&1 &
           echo "Waiting for dev server on :34115..."
@@ -75,6 +82,7 @@ jobs:
         working-directory: frontend
         env:
           CI: "true"
+          BALLAST_E2E_OUTCOME_FILE: "${{ github.workspace }}/e2e-outcome.txt"
         run: npx playwright test
 
       - name: Upload wails dev log on failure

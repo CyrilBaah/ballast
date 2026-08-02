@@ -1,49 +1,32 @@
 import './style.css';
 import './app.css';
 
-import logo from './assets/images/logo-universal.png';
-import {Greet} from '../wailsjs/go/main/App';
+import { renderSignIn } from './screens/signin';
+import type { AuthStatus } from './api/auth';
 
-// Setup the greet function
-window.greet = function () {
-    // Get name
-    let name = nameElement!.value;
+const app = document.querySelector<HTMLElement>('#app')!;
 
-    // Check if the input is empty
-    if (name === "") return;
+let teardown: (() => void) | null = null;
 
-    // Call App.Greet(name)
-    try {
-        Greet(name)
-            .then((result) => {
-                // Update result with data back from App.Greet()
-                resultElement!.innerText = result;
-            })
-            .catch((err) => {
-                console.error(err);
-            });
-    } catch (err) {
-        console.error(err);
-    }
-};
-
-document.querySelector('#app')!.innerHTML = `
-    <img id="logo" class="logo">
-      <div class="result" id="result">Please enter your name below 👇</div>
-      <div class="input-box" id="input">
-        <input class="input" id="name" type="text" autocomplete="off" />
-        <button class="btn" onclick="greet()">Greet</button>
-      </div>
-    </div>
-`;
-(document.getElementById('logo') as HTMLImageElement).src = logo;
-
-let nameElement = (document.getElementById("name") as HTMLInputElement);
-nameElement.focus();
-let resultElement = document.getElementById("result");
-
-declare global {
-    interface Window {
-        greet: () => void;
-    }
+function showSignIn() {
+    teardown?.();
+    teardown = renderSignIn({
+        container: app,
+        onSignedIn: (status: AuthStatus) => showSignedIn(status),
+    });
 }
+
+function showSignedIn(status: AuthStatus) {
+    teardown?.();
+    teardown = null;
+    // The picker screen (User Story 2) and progress screen (User Story 3)
+    // replace this placeholder in later phases of this feature.
+    app.innerHTML = `
+        <div class="picker-screen">
+            <h1>Ballast</h1>
+            <p>Signed in as ${status.email ?? 'unknown'}.</p>
+        </div>
+    `;
+}
+
+showSignIn();
