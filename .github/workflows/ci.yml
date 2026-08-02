@@ -36,6 +36,17 @@ jobs:
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      # main.go's `//go:embed all:frontend/dist` requires frontend/dist to
+      # exist (it's gitignored build output), so the frontend must be built
+      # before any Go step that compiles main.go.
       - name: go vet
         run: go vet ./...
 
@@ -44,14 +55,6 @@ jobs:
 
       - name: go test
         run: go test ./... -v
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
 
       - name: Install Playwright browsers
         working-directory: frontend
