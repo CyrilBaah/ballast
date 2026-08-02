@@ -71,7 +71,15 @@ jobs:
           BALLAST_E2E_MOCK: "1"
           BALLAST_E2E_OUTCOME_FILE: "${{ github.workspace }}/e2e-outcome.txt"
         run: |
-          nohup "$(go env GOPATH)/bin/wails" dev > wails-dev.log 2>&1 &
+          # Ubuntu 24.04+ dropped the webkit2gtk-4.0 package entirely (only
+          # 4.1 is installable, per the step above); Wails v2 needs the
+          # `webkit2_41` build tag to target it, or cgo's pkg-config lookup
+          # still tries the removed 4.0 package and fails to compile.
+          WAILS_TAGS=""
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            WAILS_TAGS="-tags webkit2_41"
+          fi
+          nohup "$(go env GOPATH)/bin/wails" dev $WAILS_TAGS > wails-dev.log 2>&1 &
           echo "Waiting for dev server on :34115..."
           for i in $(seq 1 60); do
             if curl -sSf http://localhost:34115 > /dev/null 2>&1; then
