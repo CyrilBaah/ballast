@@ -77,6 +77,11 @@ jobs:
           # still tries the removed 4.0 package and fails to compile.
           WAILS_LAUNCH="$(go env GOPATH)/bin/wails dev"
           if [ "$RUNNER_OS" = "Linux" ]; then
+            # WebKitGTK 2.40+'s DMA-BUF renderer crash-loops with no real
+            # GPU (Xvfb has none), causing the webview to repeatedly reload
+            # ("Unknown message from front end: runtime:ready" spam) instead
+            # of settling -- disable it to force software rendering.
+            export WEBKIT_DISABLE_DMABUF_RENDERER=1
             WAILS_LAUNCH="xvfb-run -a $(go env GOPATH)/bin/wails dev -tags webkit2_41"
           fi
           nohup $WAILS_LAUNCH > wails-dev.log 2>&1 &
