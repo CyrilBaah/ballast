@@ -27,11 +27,11 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install Linux system dependencies (webkit2gtk, gtk3)
+      - name: Install Linux system dependencies (webkit2gtk, gtk3, xvfb)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev xvfb
 
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
@@ -75,11 +75,11 @@ jobs:
           # 4.1 is installable, per the step above); Wails v2 needs the
           # `webkit2_41` build tag to target it, or cgo's pkg-config lookup
           # still tries the removed 4.0 package and fails to compile.
-          WAILS_TAGS=""
+          WAILS_LAUNCH="$(go env GOPATH)/bin/wails dev"
           if [ "$RUNNER_OS" = "Linux" ]; then
-            WAILS_TAGS="-tags webkit2_41"
+            WAILS_LAUNCH="xvfb-run -a $(go env GOPATH)/bin/wails dev -tags webkit2_41"
           fi
-          nohup "$(go env GOPATH)/bin/wails" dev $WAILS_TAGS > wails-dev.log 2>&1 &
+          nohup $WAILS_LAUNCH > wails-dev.log 2>&1 &
           echo "Waiting for dev server on :34115..."
           for i in $(seq 1 60); do
             if curl -sSf http://localhost:34115 > /dev/null 2>&1; then
