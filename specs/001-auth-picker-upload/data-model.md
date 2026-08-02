@@ -15,8 +15,14 @@ the entire feature (single account per installation, per Assumptions).
 | `google_user_id` | TEXT | Stable Google account identifier (`sub` claim), for detecting "same account re-signed-in" vs. a different account. |
 | `email` | TEXT | Display-only, shown in the UI so the user knows which account is connected. |
 | `access_token_ciphertext` | BLOB | AES-256-GCM ciphertext; see research.md §4. |
+| `access_token_nonce` | BLOB | GCM nonce for `access_token_ciphertext`. |
 | `refresh_token_ciphertext` | BLOB | AES-256-GCM ciphertext. |
-| `token_nonce` | BLOB | GCM nonce, one per encryption operation (do not reuse across access/refresh token or across re-encryption). |
+| `refresh_token_nonce` | BLOB | GCM nonce for `refresh_token_ciphertext`. |
+
+**Implementation note**: split into two nonce columns (one per ciphertext)
+rather than the single shared `token_nonce` implied above — a shared column
+can't satisfy this same table's "never reuse a nonce across access/refresh
+token" rule once there are two independently encrypted values.
 | `access_token_expiry` | DATETIME | Used to decide whether a silent refresh is needed before an API call. |
 | `created_at` | DATETIME | First sign-in timestamp. |
 

@@ -50,13 +50,13 @@ to enable independent implementation and testing of each story.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T006 Implement SQLite connection/bootstrap (`modernc.org/sqlite`, DB file in the OS app-data directory) in `internal/storage/db.go`
-- [ ] T007 Create the `Account` and `Upload` table schemas per data-model.md in `internal/storage/schema.go`
-- [ ] T008 [P] Implement the OS-keychain wrapper (`go-keyring`: fetch-or-create the AES-256-GCM data-encryption key; fail closed with a clear error if the keychain is unavailable, per research.md §4 / Constitution Principle VII) in `internal/keychain/keychain.go`
-- [ ] T009 [P] Implement AES-256-GCM token encryption/decryption helpers (per-operation nonce, never reused) in `internal/storage/crypto.go` — pure functions over byte blobs, no dependency on T006/T007
-- [ ] T010 [P] Define Wails event-emission helpers for `auth:changed`, `upload:progress`, `upload:complete`, `upload:failed` in `internal/events/events.go`
-- [ ] T011 Wire up the Wails entrypoint: bind the `App` struct (empty methods for now) and window config in `main.go` and `app.go`
-- [ ] T012 [P] Configure structured logging with an explicit rule that credential values (tokens, ciphertext, keychain material) are never logged at any level, per Constitution Principle IV, in `internal/logging/logging.go`
+- [X] T006 Implement SQLite connection/bootstrap (`modernc.org/sqlite`, DB file in the OS app-data directory) in `internal/storage/db.go`
+- [X] T007 Create the `Account` and `Upload` table schemas per data-model.md in `internal/storage/schema.go`
+- [X] T008 [P] Implement the OS-keychain wrapper (`go-keyring`: fetch-or-create the AES-256-GCM data-encryption key; fail closed with a clear error if the keychain is unavailable, per research.md §4 / Constitution Principle VII) in `internal/keychain/keychain.go`
+- [X] T009 [P] Implement AES-256-GCM token encryption/decryption helpers (per-operation nonce, never reused) in `internal/storage/crypto.go` — pure functions over byte blobs, no dependency on T006/T007
+- [X] T010 [P] Define Wails event-emission helpers for `auth:changed`, `upload:progress`, `upload:complete`, `upload:failed` in `internal/events/events.go`
+- [X] T011 Wire up the Wails entrypoint: bind the `App` struct (empty methods for now) and window config in `main.go` and `app.go`
+- [X] T012 [P] Configure structured logging with an explicit rule that credential values (tokens, ciphertext, keychain material) are never logged at any level, per Constitution Principle IV, in `internal/logging/logging.go`
 
 **Checkpoint**: Foundation ready — user story implementation can now begin
 
