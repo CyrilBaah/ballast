@@ -4,11 +4,13 @@
 import { PickLocal, type LocalFileRef } from '../api/files';
 import { ListFolders, type DriveFolder } from '../api/drive';
 import { Start } from '../api/upload';
+import { SignOut } from '../api/auth';
 
 export interface PickerScreenOptions {
     container: HTMLElement;
     email?: string;
     onUploadStarted: (uploadId: number, file: LocalFileRef, folder: BreadcrumbEntry) => void;
+    onSignedOut: () => void;
 }
 
 interface BreadcrumbEntry {
@@ -19,7 +21,7 @@ interface BreadcrumbEntry {
 const ROOT: BreadcrumbEntry = { id: '', name: 'My Drive' };
 
 export function renderPicker(opts: PickerScreenOptions): () => void {
-    const { container, email, onUploadStarted } = opts;
+    const { container, email, onUploadStarted, onSignedOut } = opts;
 
     let selectedFile: LocalFileRef | null = null;
     let path: BreadcrumbEntry[] = [ROOT];
@@ -30,7 +32,11 @@ export function renderPicker(opts: PickerScreenOptions): () => void {
     container.innerHTML = `
         <div class="picker-screen">
             <h1>Ballast</h1>
-            <p class="picker-account">Signed in as ${email ?? 'unknown'}.</p>
+            <div class="picker-header">
+                <p class="picker-account">Signed in as ${email ?? 'unknown'}.</p>
+                <button id="sign-out-btn" class="btn btn-secondary">Sign out</button>
+            </div>
+            <p id="sign-out-error" class="signin-error" role="alert"></p>
 
             <section class="picker-file">
                 <button id="pick-file-btn" class="btn">Choose a file…</button>
@@ -48,6 +54,8 @@ export function renderPicker(opts: PickerScreenOptions): () => void {
         </div>
     `;
 
+    const signOutBtn = container.querySelector<HTMLButtonElement>('#sign-out-btn')!;
+    const signOutErrorEl = container.querySelector<HTMLParagraphElement>('#sign-out-error')!;
     const pickFileBtn = container.querySelector<HTMLButtonElement>('#pick-file-btn')!;
     const pickedFileEl = container.querySelector<HTMLParagraphElement>('#picked-file')!;
     const breadcrumbEl = container.querySelector<HTMLParagraphElement>('#picker-breadcrumb')!;
@@ -119,6 +127,20 @@ export function renderPicker(opts: PickerScreenOptions): () => void {
             folderErrorEl.textContent = err instanceof Error ? err.message : String(err);
         }
     }
+
+    signOutBtn.addEventListener('click', async () => {
+        signOutBtn.disabled = true;
+        signOutErrorEl.textContent = '';
+        try {
+            await SignOut();
+            if (disposed) return;
+            onSignedOut();
+        } catch (err) {
+            if (disposed) return;
+            signOutBtn.disabled = false;
+            signOutErrorEl.textContent = err instanceof Error ? err.message : String(err);
+        }
+    });
 
     pickFileBtn.addEventListener('click', async () => {
         try {

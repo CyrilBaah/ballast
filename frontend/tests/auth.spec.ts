@@ -76,6 +76,24 @@ test('sign-out returns the app to the signed-out state (Acceptance Scenario 3)',
   await expect(page.locator('.picker-screen')).toHaveCount(0);
 });
 
+test('clicking the picker\'s Sign out button returns the app to the signed-out state', async ({
+  page,
+}) => {
+  setOutcome('approve');
+  await page.click('#signin-btn');
+  await expect(page.locator('.picker-screen')).toBeVisible({ timeout: 10_000 });
+
+  await page.click('#sign-out-btn');
+
+  await expect(page.locator('#signin-btn')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('.picker-screen')).toHaveCount(0);
+
+  // Confirm the session was actually cleared, not just the UI swapped.
+  await page.reload();
+  await expect(page.locator('#signin-btn')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('.picker-screen')).toHaveCount(0);
+});
+
 test('cancelling/denying Google consent leaves no session (Edge Case)', async ({
   page,
 }) => {

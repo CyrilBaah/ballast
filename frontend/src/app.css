@@ -90,8 +90,27 @@
     font-weight: 600;
 }
 
+.picker-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+}
+
 .picker-account {
     opacity: 0.8;
+}
+
+.btn-secondary {
+    background: transparent;
+    border: 1px solid currentColor;
+    opacity: 0.8;
+    padding: 0.3rem 0.8rem;
+    font-size: 0.85rem;
+}
+
+.btn-secondary:hover {
+    opacity: 1;
 }
 
 .picker-file {

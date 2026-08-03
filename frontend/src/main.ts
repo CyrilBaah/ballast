@@ -32,6 +32,7 @@ function showPicker(status: AuthStatus) {
                 fileName: file.name,
             });
         },
+        onSignedOut: () => showSignIn(),
     });
 }
 
