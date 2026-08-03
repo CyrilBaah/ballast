@@ -29,6 +29,13 @@ const (
 	DriveMetadataReadonlyScope = "https://www.googleapis.com/auth/drive.metadata.readonly"
 )
 
+// FetchUserInfo needs an identity scope to call Google's userinfo endpoint
+// at all -- the Drive scopes above don't grant access to it on their own.
+const (
+	OpenIDScope        = "openid"
+	UserInfoEmailScope = "https://www.googleapis.com/auth/userinfo.email"
+)
+
 // DefaultUserInfoURL is Google's real userinfo endpoint. Callers that need
 // to point at a mock (tests; the E2E-mocked dev build, research.md §5) pass
 // a different URL explicitly to FetchUserInfo/SignIn instead of relying on

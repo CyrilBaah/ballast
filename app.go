@@ -129,7 +129,7 @@ func (a *App) oauthConfig() *oauth2pkg.Config {
 	return &oauth2pkg.Config{
 		ClientID:     os.Getenv("BALLAST_GOOGLE_CLIENT_ID"),
 		ClientSecret: os.Getenv("BALLAST_GOOGLE_CLIENT_SECRET"),
-		Scopes:       []string{auth.DriveFileScope, auth.DriveMetadataReadonlyScope},
+		Scopes:       []string{auth.OpenIDScope, auth.UserInfoEmailScope, auth.DriveFileScope, auth.DriveMetadataReadonlyScope},
 		Endpoint:     endpoint,
 	}
 }
@@ -368,7 +368,15 @@ func (a *App) driveService(ctx context.Context) (*drivev3.Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("drive: decrypt access token: %w", err)
 	}
-	tok := &oauth2pkg.Token{AccessToken: string(accessPlain), Expiry: acct.AccessTokenExpiry}
+	refreshPlain, err := storage.Decrypt(a.encKey, acct.RefreshTokenCiphertext, acct.RefreshTokenNonce)
+	if err != nil {
+		return nil, fmt.Errorf("drive: decrypt refresh token: %w", err)
+	}
+	tok := &oauth2pkg.Token{
+		AccessToken:  string(accessPlain),
+		RefreshToken: string(refreshPlain),
+		Expiry:       acct.AccessTokenExpiry,
+	}
 	client := a.oauthConfig().Client(ctx, tok)
 
 	opts := []option.ClientOption{option.WithHTTPClient(client)}
