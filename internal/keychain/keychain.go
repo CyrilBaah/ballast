@@ -1,13 +1,7 @@
 // Package keychain wraps OS-native credential storage (macOS Keychain,
-// Windows Credential Manager, Linux Secret Service) via zalando/go-keyring
-// to hold Ballast's AES-256-GCM data-encryption key.
-//
-// Per Constitution Principle IV, the key MUST NOT be stored in a file
-// alongside the database. Per Constitution Principle VII and research.md
-// §4, if the OS keychain is unavailable (most commonly: no Secret Service
-// daemon running on a minimal/headless Linux session), this package fails
-// closed with a clear, specific error rather than silently falling back to
-// an unencrypted key file.
+// Windows Credential Manager, Linux Secret Service) to hold Ballast's
+// AES-256-GCM data-encryption key. If the OS keychain is unavailable, it
+// fails closed rather than falling back to an unencrypted key file.
 package keychain
 
 import (
@@ -26,8 +20,7 @@ const (
 )
 
 // ErrUnavailable is returned when the OS keychain cannot be read from or
-// written to. Callers MUST surface this as a clear, actionable error to the
-// user (research.md §4) and MUST NOT fall back to unencrypted storage.
+// written to. Callers must surface this to the user and never fall back to unencrypted storage.
 var ErrUnavailable = errors.New("secure credential storage isn't available on this system; Ballast cannot sign in without it")
 
 // GetOrCreateKey fetches Ballast's AES-256 data-encryption key from the OS
@@ -45,9 +38,8 @@ func GetOrCreateKey() ([]byte, error) {
 	case errors.Is(err, keyring.ErrNotFound):
 		return createAndStoreKey()
 	default:
-		// Any other error (no Secret Service daemon, permission denied,
-		// D-Bus unavailable, etc.) is treated as "keychain unavailable" —
-		// fail closed, per Principle VII's documented fallback.
+		// Any other error (no Secret Service daemon, permission denied, D-Bus
+		// unavailable, etc.) is treated as "keychain unavailable" and fails closed.
 		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
 }
@@ -65,9 +57,7 @@ func createAndStoreKey() ([]byte, error) {
 }
 
 // DeleteKey removes the data-encryption key from the OS keychain. Not
-// currently invoked by sign-out (data-model.md: sign-out deletes the
-// Account row, not the key — a future sign-in reuses the same key rather
-// than re-provisioning one), but exposed for completeness and tests.
+// currently invoked by sign-out; exposed for completeness and tests.
 func DeleteKey() error {
 	err := keyring.Delete(service, account)
 	if err != nil && !errors.Is(err, keyring.ErrNotFound) {

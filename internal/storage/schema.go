@@ -2,18 +2,10 @@ package storage
 
 import "fmt"
 
-// schema defines the Account and Upload tables per data-model.md. Both
-// tables belong to this feature only — no session-offset/chunk-state
-// columns exist here, since resumable-engine persistence is a later
-// feature's data model (see data-model.md's preamble).
+// schema defines the Account and Upload tables.
 const schema = `
--- Deviation from data-model.md: that doc lists a single shared
--- token_nonce column, but its own validation rule requires a nonce
--- "never reused across access/refresh token or across re-encryption" --
--- which a single shared column can't satisfy for two independently
--- encrypted values. Using two per-token nonce columns instead is the
--- literal, safe reading of that rule and avoids a real AES-GCM nonce-reuse
--- bug (Constitution Principle IV).
+-- Separate nonce columns per token, since a shared nonce column can't
+-- satisfy AES-GCM's rule against reusing a nonce across two encrypted values.
 CREATE TABLE IF NOT EXISTS account (
 	id INTEGER PRIMARY KEY,
 	google_user_id TEXT NOT NULL,

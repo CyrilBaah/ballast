@@ -1,13 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
 import * as fs from 'node:fs';
 
-// Covers quickstart.md Scenario 1 (sign-in, persistence across relaunch,
-// sign-out, cancel/deny mid-flow). Google's OAuth consent screen is mocked
-// entirely at the network boundary (research.md §5, mock_e2e.go) via
-// BALLAST_E2E_MOCK=1 -- no real Google account or browser popup is
-// involved. The outcome ("approve" vs "deny" consent) is toggled between
-// test cases by writing to BALLAST_E2E_OUTCOME_FILE, which the mocked
-// backend re-reads on every Auth.SignIn call.
+// Google's OAuth consent screen is mocked entirely at the network boundary
+// (mock_e2e.go) via BALLAST_E2E_MOCK=1, so no real Google account or
+// browser popup is involved. The outcome is toggled between test cases by
+// writing "approve" or "deny" to BALLAST_E2E_OUTCOME_FILE.
 const outcomeFile =
   process.env.BALLAST_E2E_OUTCOME_FILE ?? `${__dirname}/.e2e-outcome`;
 
@@ -53,10 +50,8 @@ test('sign-in completes and the session persists across a relaunch (Acceptance S
     'e2e-mock-user@example.com',
   );
 
-  // Simulate relaunch: reload the page. The backend process and its
-  // SQLite-backed session survive a reload exactly as they would survive
-  // an app restart, so Auth.GetStatus must report signedIn:true
-  // immediately with no consent screen shown again (SC-001/SC-005).
+  // Simulate relaunch: a reload survives exactly like an app restart, so
+  // Auth.GetStatus must report signedIn:true immediately with no consent screen shown again.
   await page.reload();
   await expect(page.locator('.picker-screen')).toBeVisible({ timeout: 10_000 });
   await expect(page.locator('#signin-btn')).toHaveCount(0);
@@ -100,9 +95,7 @@ test('cancelling/denying Google consent leaves no session (Edge Case)', async ({
   setOutcome('deny');
   await page.click('#signin-btn');
 
-  // A denial is a valid, expected outcome (contracts/wails-bindings.md):
-  // the app returns to a clean signed-out state, no error banner, and no
-  // session is persisted.
+  // A denial is a valid, expected outcome: a clean signed-out state, no error banner, no session persisted.
   await expect(page.locator('.picker-screen')).toHaveCount(0);
   await expect(page.locator('#signin-btn')).toBeVisible();
   await expect(page.locator('#signin-error')).toHaveText('');

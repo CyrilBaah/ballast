@@ -83,9 +83,7 @@ func TestListFoldersCallsDriveAPIAndParsesResults(t *testing.T) {
 	}
 }
 
-// A nil slice marshals to JSON `null`, which crashes the frontend's
-// `folders.forEach` (it expects `[]` for an empty result) -- guard against
-// regressing back to `var folders []Folder`.
+// A nil slice marshals to JSON `null`, which crashes the frontend's `folders.forEach`.
 func TestListFoldersReturnsEmptySliceNotNilWhenNoMatches(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

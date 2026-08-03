@@ -1,9 +1,6 @@
-// Package auth implements the Google OAuth 2.0 desktop (installed-app)
-// loopback-redirect flow with PKCE (research.md §1): a local HTTP listener
-// on an OS-assigned port captures the redirect after the user approves
-// access in their system browser, closing the main weakness of loopback
-// redirects (a second local process racing to claim the redirect) by making
-// a stolen auth code useless without the original code verifier.
+// Package auth implements the Google OAuth 2.0 desktop loopback-redirect
+// flow with PKCE: a local HTTP listener captures the redirect after the
+// user approves access in their system browser.
 package auth
 
 import (
@@ -21,25 +18,21 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// Least-privilege scope pair (research.md §1): drive.file for upload
-// capability, drive.metadata.readonly to browse pre-existing folders
-// (FR-005) without requesting full Drive read/write access.
+// Least-privilege scopes: drive.file for uploads, drive.metadata.readonly
+// to browse existing folders, without full Drive read/write access.
 const (
 	DriveFileScope             = "https://www.googleapis.com/auth/drive.file"
 	DriveMetadataReadonlyScope = "https://www.googleapis.com/auth/drive.metadata.readonly"
 )
 
-// FetchUserInfo needs an identity scope to call Google's userinfo endpoint
-// at all -- the Drive scopes above don't grant access to it on their own.
+// Identity scopes needed to call Google's userinfo endpoint; the Drive scopes above don't grant that on their own.
 const (
 	OpenIDScope        = "openid"
 	UserInfoEmailScope = "https://www.googleapis.com/auth/userinfo.email"
 )
 
-// DefaultUserInfoURL is Google's real userinfo endpoint. Callers that need
-// to point at a mock (tests; the E2E-mocked dev build, research.md §5) pass
-// a different URL explicitly to FetchUserInfo/SignIn instead of relying on
-// package-level mutable state.
+// DefaultUserInfoURL is Google's real userinfo endpoint. Tests and the
+// E2E-mocked build pass a different URL explicitly instead.
 const DefaultUserInfoURL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 // PKCE holds an S256 PKCE verifier/challenge pair (RFC 7636).
@@ -48,8 +41,7 @@ type PKCE struct {
 	Challenge string
 }
 
-// NewPKCE generates a new random code verifier (43-128 chars per RFC 7636,
-// here 96 bytes of randomness base64url-encoded) and its S256 challenge.
+// NewPKCE generates a new random code verifier and its S256 challenge.
 func NewPKCE() (PKCE, error) {
 	raw := make([]byte, 64)
 	if _, err := rand.Read(raw); err != nil {
@@ -96,9 +88,7 @@ type UserInfo struct {
 }
 
 // FetchUserInfo retrieves the signed-in user's stable account identifier
-// and email using an authenticated client (an *http.Client produced by
-// cfg.Client(ctx, tok), so the access token is attached automatically and
-// never appears in this function's own code or logs).
+// and email using an authenticated client that attaches the access token automatically.
 func FetchUserInfo(ctx context.Context, client *http.Client, userInfoURL string) (*UserInfo, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, userInfoURL, nil)
 	if err != nil {
@@ -119,17 +109,16 @@ func FetchUserInfo(ctx context.Context, client *http.Client, userInfoURL string)
 	return &info, nil
 }
 
-// CallbackResult is what the loopback listener captured from Google's
-// redirect.
+// CallbackResult is what the loopback listener captured from Google's redirect.
 type CallbackResult struct {
 	Code   string
 	State  string
-	Denied bool // true when Google redirected with error=access_denied (or any error param) -- Edge Case: user cancels/denies mid-flow
+	Denied bool // true when the user cancelled/denied consent
 	Err    error
 }
 
 // LoopbackServer is a short-lived local HTTP listener that captures exactly
-// one OAuth redirect, per research.md §1.
+// one OAuth redirect.
 type LoopbackServer struct {
 	listener net.Listener
 	server   *http.Server
@@ -180,8 +169,7 @@ func (s *LoopbackServer) handleCallback(w http.ResponseWriter, r *http.Request) 
 	select {
 	case s.resultCh <- result:
 	default:
-		// Already delivered a result (shouldn't happen for a single
-		// sign-in attempt); drop any further hits to /callback.
+		// A result was already delivered; drop any further hits to /callback.
 	}
 }
 
@@ -207,8 +195,7 @@ func (s *LoopbackServer) Close() error {
 	return s.server.Close()
 }
 
-// randomState generates an opaque, unguessable OAuth state parameter (CSRF
-// protection for the redirect).
+// randomState generates an opaque, unguessable OAuth state parameter for CSRF protection.
 func randomState() (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
@@ -218,8 +205,7 @@ func randomState() (string, error) {
 }
 
 // Session is the outcome of a completed sign-in: either a real session, or
-// Cancelled=true if the user denied/cancelled consent (Edge Case in
-// spec.md) -- a valid, expected outcome, not an error.
+// Cancelled=true if the user denied/cancelled consent.
 type Session struct {
 	Cancelled    bool
 	Email        string
@@ -229,9 +215,7 @@ type Session struct {
 	Expiry       time.Time
 }
 
-// BrowserOpener opens a URL in the user's default system browser. Swappable
-// for tests / the mocked-OAuth Playwright path (research.md §5) so SignIn
-// doesn't require launching a real browser window.
+// BrowserOpener opens a URL in the user's default system browser. Swappable for tests and the mocked-OAuth Playwright path.
 type BrowserOpener func(url string) error
 
 // signInTimeout bounds how long SignIn waits for the user to complete (or
@@ -241,8 +225,6 @@ const signInTimeout = 5 * time.Minute
 // SignIn runs one full loopback+PKCE sign-in attempt: starts the local
 // listener, opens the consent screen via openBrowser, waits for the
 // redirect, exchanges the code, and fetches the account's email/sub.
-// userInfoURL is normally DefaultUserInfoURL; tests / the E2E-mocked dev
-// build pass a mock server URL instead.
 func SignIn(ctx context.Context, cfg *oauth2.Config, openBrowser BrowserOpener, userInfoURL string) (*Session, error) {
 	pkce, err := NewPKCE()
 	if err != nil {

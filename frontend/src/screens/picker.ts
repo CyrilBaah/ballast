@@ -1,6 +1,5 @@
-// File + folder picker screen (User Story 2): pick a local file, browse
-// Drive destination folders (defaulting to "My Drive"), and start the
-// upload.
+// File + folder picker screen: pick a local file, browse Drive destination
+// folders (defaulting to "My Drive"), and start the upload.
 import { PickLocal, type LocalFileRef } from '../api/files';
 import { ListFolders, type DriveFolder } from '../api/drive';
 import { Start } from '../api/upload';

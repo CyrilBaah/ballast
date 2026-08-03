@@ -1,6 +1,6 @@
 // Package drive wraps the Google Drive API v3 client for the two
-// operations this feature needs: browsing existing folders (FR-005) and
-// performing a basic, non-resumable file upload (FR-006).
+// operations Ballast needs: browsing existing folders and performing a
+// basic, non-resumable file upload.
 package drive
 
 import (
@@ -13,27 +13,18 @@ import (
 
 const folderMimeType = "application/vnd.google-apps.folder"
 
-// Folder is a Drive folder as surfaced to the frontend (contract:
-// DriveFolder).
+// Folder is a Drive folder as surfaced to the frontend.
 type Folder struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	// HasChildren is always true rather than computed from an extra
-	// per-folder API call. Contracts/wails-bindings.md asks for this field
-	// specifically so the UI can "show an expand affordance without an
-	// extra round trip" -- an honest per-folder child count would require
-	// exactly the extra round trip that requirement rules out. Reporting
-	// true always costs nothing extra and only downside-cases into an
-	// empty folder view on click, which is a fine, simple outcome
-	// (Constitution Principle V: no speculative complexity for a cosmetic
-	// affordance).
+	// per-folder API call, so the UI can show an expand affordance without
+	// an extra round trip; worst case is an empty folder view on click.
 	HasChildren bool `json:"hasChildren"`
 }
 
-// buildFolderQuery builds the Drive Files.List `q` filter (research.md
-// §2): folders only, not trashed, scoped to parentID -- defaulting to
-// "root" ("My Drive") when parentID is empty, per Acceptance Scenario 2 of
-// User Story 2.
+// buildFolderQuery builds the Drive Files.List `q` filter: folders only,
+// not trashed, scoped to parentID (defaulting to "root" when empty).
 func buildFolderQuery(parentID string) string {
 	if parentID == "" {
 		parentID = "root"

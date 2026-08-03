@@ -1,7 +1,6 @@
-// Sign-in screen (User Story 1): calls Auth.GetStatus on load, lets the
-// user trigger Auth.SignIn, and reacts to auth:changed so a sign-out
-// (or a forced session clear -- Edge Case in spec.md) always brings the UI
-// back here.
+// Sign-in screen: calls Auth.GetStatus on load, lets the user trigger
+// Auth.SignIn, and reacts to auth:changed so a sign-out or forced session
+// clear always brings the UI back here.
 import { GetStatus, SignIn, type AuthStatus } from '../api/auth';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 
@@ -10,9 +9,8 @@ export interface SignInScreenOptions {
     onSignedIn: (status: AuthStatus) => void;
 }
 
-// Substring used to recognize the fail-closed keychain-unavailable error
-// (research.md §4 / internal/keychain.ErrUnavailable's message) so it can
-// be surfaced distinctly from a generic sign-in failure (T021).
+// Substring used to recognize the keychain-unavailable error so it can be
+// surfaced distinctly from a generic sign-in failure.
 const KEYCHAIN_UNAVAILABLE_MARKER = 'secure credential storage';
 
 export function renderSignIn(opts: SignInScreenOptions): () => void {
@@ -57,9 +55,7 @@ export function renderSignIn(opts: SignInScreenOptions): () => void {
                 onSignedIn(status);
             }
         } catch (err) {
-            // GetStatus is not expected to reject in normal operation; if
-            // it does, leave the sign-in button available rather than
-            // getting stuck.
+            // Leave the sign-in button available rather than getting stuck.
             console.error('Auth.GetStatus failed', err);
         }
     }
@@ -73,9 +69,7 @@ export function renderSignIn(opts: SignInScreenOptions): () => void {
             if (status.signedIn) {
                 onSignedIn(status);
             }
-            // status.signedIn === false with no error means the user
-            // cancelled/denied consent (Edge Case) -- return to a clean
-            // signed-out state, no error shown, per contract.
+            // signedIn === false with no error means the user cancelled/denied consent; no error shown.
         } catch (err) {
             setBusy(false);
             const message = err instanceof Error ? err.message : String(err);

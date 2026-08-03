@@ -19,8 +19,7 @@ func TestCountingReaderThrottlesEmitsWithinWindow(t *testing.T) {
 	cr.now = func() time.Time { return fakeNow }
 
 	buf := make([]byte, 1)
-	// Five reads of 1 byte each, all within the same instant (fake clock
-	// not advancing) -- only the first should emit.
+	// Fake clock never advances, so only the first read should emit.
 	for i := 0; i < 5; i++ {
 		if _, err := cr.Read(buf); err != nil && err != io.EOF {
 			t.Fatalf("Read #%d: %v", i, err)
@@ -71,9 +70,7 @@ func TestCountingReaderAlwaysEmitsOnFinalRead(t *testing.T) {
 	})
 	cr.now = func() time.Time { return fakeNow }
 
-	// Drain fully; even though the throttle window never elapses, the
-	// final read (which returns io.EOF) must still emit so the last
-	// progress report reflects the true final byte count.
+	// Drain fully; the final io.EOF read must still emit despite the huge throttle window.
 	buf := make([]byte, len(data))
 	for {
 		_, err := cr.Read(buf)

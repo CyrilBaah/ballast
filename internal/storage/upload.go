@@ -7,8 +7,7 @@ import (
 	"time"
 )
 
-// UploadState is one of the four states an Upload row can be in
-// (data-model.md).
+// UploadState is one of the four states an Upload row can be in.
 type UploadState string
 
 const (
@@ -33,18 +32,14 @@ type Upload struct {
 	EndedAt        *time.Time
 }
 
-// ErrUploadNotFound is returned when no Upload row exists with the given
-// ID.
+// ErrUploadNotFound is returned when no Upload row exists with the given ID.
 var ErrUploadNotFound = errors.New("storage: upload not found")
 
 // ErrUploadAlreadyInProgress is returned by SetUploadInProgress when
-// another Upload row is already in_progress. data-model.md: "Exactly one
-// Upload may be in_progress at a time (this feature has no concurrency)."
+// another Upload row is already in_progress; only one upload can run at a time.
 var ErrUploadAlreadyInProgress = errors.New("storage: another upload is already in progress")
 
-// CreateUpload inserts a new Upload row in the pending state
-// (contracts/wails-bindings.md's Upload.Start: "creates an Upload row
-// (pending -> in_progress)").
+// CreateUpload inserts a new Upload row in the pending state.
 func (d *DB) CreateUpload(localPath string, localSizeBytes int64, driveFolderID string) (*Upload, error) {
 	now := time.Now()
 	res, err := d.conn.Exec(`
@@ -69,8 +64,7 @@ func (d *DB) CreateUpload(localPath string, localSizeBytes int64, driveFolderID 
 }
 
 // SetUploadInProgress transitions an Upload from pending to in_progress.
-// Rejects with ErrUploadAlreadyInProgress if another upload is already
-// in_progress (data-model.md's no-concurrency validation rule).
+// Rejects with ErrUploadAlreadyInProgress if another upload is already in_progress.
 func (d *DB) SetUploadInProgress(id int64) error {
 	var inProgressCount int
 	row := d.conn.QueryRow(`SELECT COUNT(*) FROM upload WHERE status = ? AND id != ?`, string(UploadInProgress), id)
@@ -88,8 +82,7 @@ func (d *DB) SetUploadInProgress(id int64) error {
 	return requireRowsAffected(res)
 }
 
-// UpdateUploadProgress records the latest bytes-sent count for an
-// in-progress upload (FR-007's progress indicator).
+// UpdateUploadProgress records the latest bytes-sent count for an in-progress upload.
 func (d *DB) UpdateUploadProgress(id int64, bytesSent int64) error {
 	res, err := d.conn.Exec(`UPDATE upload SET bytes_sent = ? WHERE id = ?`, bytesSent, id)
 	if err != nil {
@@ -98,9 +91,7 @@ func (d *DB) UpdateUploadProgress(id int64, bytesSent int64) error {
 	return requireRowsAffected(res)
 }
 
-// SetUploadSucceeded transitions an Upload to succeeded. Both driveFileID
-// and driveFileLink are required (data-model.md: "A succeeded row MUST
-// have both drive_file_id and drive_file_link populated").
+// SetUploadSucceeded transitions an Upload to succeeded. Both driveFileID and driveFileLink are required.
 func (d *DB) SetUploadSucceeded(id int64, driveFileID, driveFileLink string) error {
 	if driveFileID == "" || driveFileLink == "" {
 		return fmt.Errorf("storage: SetUploadSucceeded requires a non-empty driveFileID and driveFileLink")
@@ -116,8 +107,7 @@ func (d *DB) SetUploadSucceeded(id int64, driveFileID, driveFileLink string) err
 	return requireRowsAffected(res)
 }
 
-// SetUploadFailed transitions an Upload to failed. reason is required
-// (data-model.md: "A failed row MUST have failure_reason populated").
+// SetUploadFailed transitions an Upload to failed. reason is required.
 func (d *DB) SetUploadFailed(id int64, reason string) error {
 	if reason == "" {
 		return fmt.Errorf("storage: SetUploadFailed requires a non-empty reason")

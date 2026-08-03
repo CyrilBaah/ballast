@@ -5,16 +5,12 @@ import (
 	"time"
 )
 
-// progressEmitThrottle bounds how often countingReader invokes onEmit during
-// an active transfer -- ~1/s, comfortably inside SC-004's "at least every
-// 5s" requirement (research.md §3).
+// progressEmitThrottle bounds how often countingReader invokes onEmit during an active transfer.
 const progressEmitThrottle = time.Second
 
 // countingReader wraps an io.Reader, tracking cumulative bytes read and
 // invoking onEmit with the running total. Emits are throttled to at most
-// once per throttle duration, except the read that returns io.EOF, which
-// always emits so the final progress report reflects the true total byte
-// count regardless of throttling (research.md §3).
+// once per throttle duration, except the final read (io.EOF), which always emits.
 type countingReader struct {
 	src      io.Reader
 	throttle time.Duration

@@ -122,9 +122,7 @@ func TestUploadFailedRequiresReason(t *testing.T) {
 	}
 }
 
-// TestOnlyOneUploadInProgressAtATime enforces data-model.md's validation
-// rule: this feature has no concurrency, so a second upload can't be moved
-// to in_progress while one is already running.
+// TestOnlyOneUploadInProgressAtATime verifies a second upload can't be moved to in_progress while one is already running.
 func TestOnlyOneUploadInProgressAtATime(t *testing.T) {
 	db := newTestDB(t)
 
