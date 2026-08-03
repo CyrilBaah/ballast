@@ -71,18 +71,26 @@ jobs:
           BALLAST_E2E_MOCK: "1"
           BALLAST_E2E_OUTCOME_FILE: "${{ github.workspace }}/e2e-outcome.txt"
         run: |
+          # wails dev's file watcher monitors the whole frontend tree for
+          # asset changes and reloads the webview on every hit. Playwright
+          # writes its own trace/screenshot output into frontend/test-results
+          # while tests are running, which -- left enabled -- feeds back
+          # into reload-on-change and disrupts in-flight requests mid-test.
+          # CI never needs live reload, so disable both watchers outright.
+          WAILS_FLAGS="-noreload -nogorebuild"
+
           # Ubuntu 24.04+ dropped the webkit2gtk-4.0 package entirely (only
           # 4.1 is installable, per the step above); Wails v2 needs the
           # `webkit2_41` build tag to target it, or cgo's pkg-config lookup
           # still tries the removed 4.0 package and fails to compile.
-          WAILS_LAUNCH="$(go env GOPATH)/bin/wails dev"
+          WAILS_LAUNCH="$(go env GOPATH)/bin/wails dev $WAILS_FLAGS"
           if [ "$RUNNER_OS" = "Linux" ]; then
             # WebKitGTK 2.40+'s DMA-BUF renderer crash-loops with no real
             # GPU (Xvfb has none), causing the webview to repeatedly reload
             # ("Unknown message from front end: runtime:ready" spam) instead
             # of settling -- disable it to force software rendering.
             export WEBKIT_DISABLE_DMABUF_RENDERER=1
-            WAILS_LAUNCH="xvfb-run -a $(go env GOPATH)/bin/wails dev -tags webkit2_41"
+            WAILS_LAUNCH="xvfb-run -a $(go env GOPATH)/bin/wails dev $WAILS_FLAGS -tags webkit2_41"
           fi
           nohup $WAILS_LAUNCH > wails-dev.log 2>&1 &
           echo "Waiting for dev server on :34115..."
