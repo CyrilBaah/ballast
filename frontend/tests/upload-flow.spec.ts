@@ -3,14 +3,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
-// Covers quickstart.md Scenario 2 (pick file, list folders, start upload,
-// file-vanished-before-upload case, network-loss failure). Google's Drive
-// API is mocked at the network boundary (research.md §5, mock_e2e.go) via
-// BALLAST_E2E_MOCK=1 -- Files.List always reports an empty folder list (so
-// "My Drive" is the only destination, matching Acceptance Scenario 2), and
-// Files.Create either succeeds with fixed test data or, when the outcome
-// file is set to "network-fail", drops the connection to simulate lost
-// connectivity (Acceptance Scenario 4).
+// Google's Drive API is mocked at the network boundary (mock_e2e.go) via
+// BALLAST_E2E_MOCK=1: Files.List always reports an empty folder list, and
+// Files.Create either succeeds or, when the outcome file is set to
+// "network-fail", drops the connection to simulate lost connectivity.
 const outcomeFile =
   process.env.BALLAST_E2E_OUTCOME_FILE ?? `${__dirname}/.e2e-outcome`;
 
@@ -36,11 +32,8 @@ async function signIn(page: Page) {
 }
 
 // Files.PickLocal drives a native OS dialog, which Playwright cannot
-// automate. Rather than exercise the real dialog, tests call the
-// FilesPickLocal binding directly is not representative either -- instead
-// we stub `window.go.main.App.FilesPickLocal` before the picker screen's
-// button handler runs, so the rest of the real contract (Drive.ListFolders,
-// Upload.Start, the actual backend upload flow) is exercised unmodified.
+// automate, so we stub `window.go.main.App.FilesPickLocal` and exercise the
+// rest of the real upload flow unmodified.
 async function stubFilePicker(page: Page, file: { path: string; name: string; sizeBytes: number }) {
   await page.evaluate((f) => {
     (window as any).go.main.App.FilesPickLocal = () => Promise.resolve(f);
@@ -90,8 +83,7 @@ test('a file that vanishes before upload starts is rejected with a clear message
 
   await page.click('#upload-btn');
   await expect(page.locator('#upload-error')).not.toHaveText('', { timeout: 10_000 });
-  // No transition to the progress screen -- Upload.Start must reject
-  // before creating any Upload row.
+  // Upload.Start must reject before creating any Upload row.
   await expect(page.locator('.progress-screen')).toHaveCount(0);
 });
 
@@ -106,8 +98,7 @@ test('network loss mid-upload ends in a failed status, not a hang (Acceptance Sc
 
   await expect(page.locator('.progress-screen')).toBeVisible({ timeout: 10_000 });
 
-  // Poll Upload.GetStatus (the contract's documented way to read a
-  // point-in-time status) until it reaches a terminal state.
+  // Poll Upload.GetStatus until it reaches a terminal state.
   const uploadId = await page.evaluate(async () => {
     const text = document.querySelector('.progress-screen')!.textContent ?? '';
     const match = text.match(/upload #(\d+)/);

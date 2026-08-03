@@ -25,57 +25,34 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// App is the single struct Wails binds to the frontend. Its methods are the
-// entire Go<->TS contract for this feature (contracts/wails-bindings.md).
-//
-// Naming note: the contract documents methods under conceptual namespaces
-// ("Auth.GetStatus", "Files.PickLocal", "Drive.ListFolders",
-// "Upload.Start"/"Upload.GetStatus") for readability, but Go methods on one
-// struct can't collide on a bare name (Auth.GetStatus vs Upload.GetStatus).
-// Each method below is prefixed with its contract namespace
-// (AuthGetStatus, FilesPickLocal, DriveListFolders, UploadStart,
-// UploadGetStatus, ...) instead; the frontend's screen modules re-export
-// them under the contract's shorter names so call sites read like the
-// contract (see frontend/src/screens/*.ts).
+// App is the struct Wails binds to the frontend. Every exported method is
+// part of the Go<->TS contract, prefixed by namespace (AuthGetStatus,
+// DriveListFolders, ...) since Go doesn't allow dotted method names.
 type App struct {
 	ctx context.Context
 	db  *storage.DB
-	// encKey is the AES-256 data-encryption key for token ciphertext
-	// columns, fetched from the OS keychain at startup. It is held only in
-	// memory for the process lifetime and is never logged (Constitution
-	// Principle IV) or written to any file.
+	// encKey encrypts token columns at rest and is loaded from the OS
+	// keychain at startup. It stays in memory only, never on disk.
 	encKey []byte
 
-	// userInfoURL and revokeEndpoint default to Google's real endpoints;
-	// the E2E-mocked dev build (mock_e2e.go, active only when
-	// BALLAST_E2E_MOCK is set) points them at an in-process fake server so
-	// Playwright can exercise the full sign-in contract without a real
-	// Google account or a real browser window (research.md §5).
+	// userInfoURL and revokeEndpoint point at Google by default; the
+	// E2E-mocked dev build (mock_e2e.go) swaps in an in-process fake server.
 	userInfoURL           string
 	revokeEndpoint        string
 	openBrowser           auth.BrowserOpener
 	oauthEndpointOverride *oauth2pkg.Endpoint
-	// driveAPIEndpointOverride points the Drive API client at an
-	// in-process mock server in the E2E-mocked dev build (mock_e2e.go);
-	// empty in production, which uses the real Drive API.
+	// driveAPIEndpointOverride points at the same mock server; empty in production.
 	driveAPIEndpointOverride string
 }
 
-// NewApp creates a new App application struct. Construction does not touch
-// the database or keychain — that happens in startup, so NewApp itself
-// can't fail and stays trivially testable.
+// NewApp creates a new App application struct.
 func NewApp() *App {
 	return &App{}
 }
 
-// startup is called when the app starts. The context is saved so we can
-// call Wails runtime methods (event emission, dialogs) from bound methods.
-//
-// Per Constitution Principle VII / research.md §4: if the OS keychain is
-// unavailable, we do NOT fall back to an unencrypted key file. The app
-// still starts (so a signed-out user can at least see a clear error rather
-// than a crash), but any method that needs the encryption key will surface
-// keychain.ErrUnavailable until the underlying OS issue is resolved.
+// startup wires up runtime dependencies once Wails hands us a context. If
+// the OS keychain is unavailable, the app still starts but fails closed on
+// anything needing the encryption key, rather than using an unencrypted fallback.
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.userInfoURL = auth.DefaultUserInfoURL
@@ -85,7 +62,6 @@ func (a *App) startup(ctx context.Context) {
 
 	db, err := storage.Open()
 	if err != nil {
-		// No credentials in this log line — just a path/OS-level error.
 		logging.Error("failed to open local database", "error", err)
 	} else {
 		a.db = db
@@ -93,10 +69,7 @@ func (a *App) startup(ctx context.Context) {
 
 	key, err := keychain.GetOrCreateKey()
 	if err != nil {
-		// Expected/handled case on a subset of Linux systems (research.md
-		// §4) — logged at Warn, not Error, and never includes key
-		// material (there is none to include: GetOrCreateKey failed
-		// before any key existed in this process).
+		// Some Linux setups have no keyring daemon running; warn instead of erroring.
 		logging.Warn("OS keychain unavailable; sign-in will fail closed until this is resolved", "error", err)
 		return
 	}
@@ -115,12 +88,7 @@ func (a *App) shutdown(ctx context.Context) {
 // --- OAuth configuration -------------------------------------------------
 
 // oauthConfig builds the Google OAuth 2.0 desktop-app client configuration.
-// Client ID/secret are read from the environment rather than hardcoded:
-// this repo does not embed real Google Cloud OAuth client credentials (none
-// were available to provision in this environment -- see the feature's
-// final implementation report). A real distribution build sets
-// BALLAST_GOOGLE_CLIENT_ID / BALLAST_GOOGLE_CLIENT_SECRET at build or
-// install time.
+// Client ID/secret come from the environment (BALLAST_GOOGLE_CLIENT_ID/SECRET) rather than being hardcoded.
 func (a *App) oauthConfig() *oauth2pkg.Config {
 	endpoint := google.Endpoint
 	if a.oauthEndpointOverride != nil {
@@ -134,20 +102,13 @@ func (a *App) oauthConfig() *oauth2pkg.Config {
 	}
 }
 
-// errSignedOut is returned by Files/Drive/Upload methods when called while
-// signed out (FR-001) -- a distinct, recognizable error rather than a
-// generic failure, so the frontend can surface "sign in first" messaging
-// (contracts/wails-bindings.md's Upload.Start note).
+// errSignedOut is returned by Files/Drive/Upload methods when called without an active session.
 var errSignedOut = errors.New("not signed in")
 
-// --- Auth.* (contracts/wails-bindings.md) ---------------------------------
+// --- Auth.* ----------------------------------------------------------------
 
-// AuthGetStatus returns the current session state (contract: Auth.GetStatus).
-// If the stored access token is near expiry, it is silently refreshed
-// before returning signedIn:true (data-model.md: access_token_expiry
-// "used to decide whether a silent refresh is needed"). If refresh fails
-// (revoked/expired grant -- Edge Case in spec.md), the session is cleared
-// and signedIn:false is returned.
+// AuthGetStatus returns the current session state, silently refreshing a
+// near-expiry access token first. If that refresh fails, the local session is cleared.
 func (a *App) AuthGetStatus() events.AuthStatus {
 	if a.db == nil {
 		return events.AuthStatus{SignedIn: false}
@@ -170,7 +131,7 @@ func (a *App) AuthGetStatus() events.AuthStatus {
 	return events.AuthStatus{SignedIn: true, Email: acct.Email}
 }
 
-// AuthSignIn starts the OAuth loopback flow (contract: Auth.SignIn).
+// AuthSignIn starts the OAuth loopback flow.
 func (a *App) AuthSignIn() (events.AuthStatus, error) {
 	if a.db == nil {
 		return events.AuthStatus{}, fmt.Errorf("auth: local database is unavailable")
@@ -184,8 +145,7 @@ func (a *App) AuthSignIn() (events.AuthStatus, error) {
 		return events.AuthStatus{}, err
 	}
 	if session.Cancelled {
-		// No partial session (Edge Case) -- not an error/rejection, a
-		// valid, expected outcome per contracts/wails-bindings.md.
+		// A denied/cancelled consent isn't an error — just leave no session behind.
 		return events.AuthStatus{SignedIn: false}, nil
 	}
 
@@ -198,8 +158,7 @@ func (a *App) AuthSignIn() (events.AuthStatus, error) {
 	return status, nil
 }
 
-// AuthSignOut revokes the OAuth grant server-side and clears the local
-// session (contract: Auth.SignOut; FR-003).
+// AuthSignOut revokes the OAuth grant server-side and clears the local session.
 func (a *App) AuthSignOut() error {
 	if a.db == nil {
 		return fmt.Errorf("auth: local database is unavailable")
@@ -227,9 +186,8 @@ func (a *App) AuthSignOut() error {
 	return err
 }
 
-// requireSignedIn is the FR-001 access-control gate for Files/Drive/Upload
-// methods: file selection, folder browsing, and upload capabilities are
-// unavailable until sign-in completes.
+// requireSignedIn is the single access-control gate shared by every
+// Files/Drive/Upload method.
 func (a *App) requireSignedIn() error {
 	if a.db == nil {
 		return fmt.Errorf("auth: local database is unavailable")
@@ -281,7 +239,7 @@ func (a *App) silentlyRefresh(acct *storage.Account) error {
 
 	newRefreshToken := tok.RefreshToken
 	if newRefreshToken == "" {
-		// Google does not always rotate the refresh token; keep the
+		// Google doesn't always rotate the refresh token; keep the
 		// existing one if none was issued.
 		newRefreshToken = string(refreshPlain)
 	}
@@ -296,18 +254,17 @@ func (a *App) silentlyRefresh(acct *storage.Account) error {
 	return a.persistSession(session)
 }
 
-// --- Files.* (contracts/wails-bindings.md) --------------------------------
+// --- Files.* -----------------------------------------------------------
 
-// LocalFileRef mirrors contracts/wails-bindings.md's LocalFileRef type.
+// LocalFileRef is the file metadata sent to the frontend after a pick.
 type LocalFileRef struct {
 	Path      string `json:"path"`
 	Name      string `json:"name"`
 	SizeBytes int64  `json:"sizeBytes"`
 }
 
-// FilesPickLocal opens the native OS file-picker dialog in single-select
-// mode (contract: Files.PickLocal; FR-004's "exactly one file"). Returns
-// nil if the user cancels the dialog.
+// FilesPickLocal opens the native OS file picker in single-select mode.
+// Returns nil if the user cancels.
 func (a *App) FilesPickLocal() (*LocalFileRef, error) {
 	path, err := wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
 		Title: "Select a file to upload",
@@ -325,11 +282,10 @@ func (a *App) FilesPickLocal() (*LocalFileRef, error) {
 	return &LocalFileRef{Path: path, Name: filepath.Base(path), SizeBytes: info.Size()}, nil
 }
 
-// --- Drive.* (contracts/wails-bindings.md) ---------------------------------
+// --- Drive.* -----------------------------------------------------------
 
-// DriveListFolders lists child folders of parentId ("" means the Drive
-// root, "My Drive" -- Acceptance Scenario 2 of User Story 2). Requires a
-// signed-in session (FR-001).
+// DriveListFolders lists the child folders of parentId ("" means the
+// Drive root, "My Drive"). Requires an active session.
 func (a *App) DriveListFolders(parentId string) ([]drive.Folder, error) {
 	svc, err := a.driveService(a.ctx)
 	if err != nil {
@@ -339,9 +295,7 @@ func (a *App) DriveListFolders(parentId string) ([]drive.Folder, error) {
 }
 
 // driveService builds an authenticated Drive API client for the current
-// session, refreshing the access token first if it's near expiry. Returns
-// errSignedOut if there is no valid session -- the single FR-001 gate all
-// Drive/Upload methods share.
+// session, refreshing the access token first if it's near expiry.
 func (a *App) driveService(ctx context.Context) (*drivev3.Service, error) {
 	if err := a.requireSignedIn(); err != nil {
 		return nil, err
@@ -390,9 +344,9 @@ func (a *App) driveService(ctx context.Context) (*drivev3.Service, error) {
 	return svc, nil
 }
 
-// --- Upload.* (contracts/wails-bindings.md) ---------------------------------
+// --- Upload.* -----------------------------------------------------------
 
-// UploadStatusDTO mirrors contracts/wails-bindings.md's UploadStatus type.
+// UploadStatusDTO is the upload status sent to the frontend.
 type UploadStatusDTO struct {
 	Status        string `json:"status"`
 	BytesSent     int64  `json:"bytesSent"`
@@ -401,12 +355,8 @@ type UploadStatusDTO struct {
 	FailureReason string `json:"failureReason,omitempty"`
 }
 
-// UploadStart validates the local file still exists (FR-011), creates an
-// Upload row, and begins the non-resumable transfer in the background.
-// Requires a signed-in session; rejects with errSignedOut (a distinct auth
-// error, not a generic upload failure) if called while signed out
-// (FR-001) -- checked, like the file-existence check, before any Upload
-// row is created.
+// UploadStart verifies the local file still exists, creates an Upload row,
+// and kicks off the transfer in the background.
 func (a *App) UploadStart(localPath, driveFolderId string) (int64, error) {
 	if err := a.requireSignedIn(); err != nil {
 		return 0, err
@@ -438,12 +388,8 @@ func (a *App) UploadStart(localPath, driveFolderId string) (int64, error) {
 	return u.ID, nil
 }
 
-// runUpload performs the actual transfer and records its outcome. Runs on
-// the app's lifetime context (not a per-request context, since it
-// continues after UploadStart has already returned the UploadId to the
-// frontend). drive.UploadFile emits the upload:progress/upload:complete/
-// upload:failed events itself (T035); this method's job is solely to keep
-// the persisted Upload row's bytes_sent/status in sync with those outcomes.
+// runUpload performs the transfer and records its outcome. It runs on the
+// app's lifetime context since it keeps going after UploadStart has already returned.
 func (a *App) runUpload(id int64, svc *drivev3.Service, localPath, driveFolderID string, totalBytes int64) {
 	onProgress := func(bytesSent int64) {
 		if err := a.db.UpdateUploadProgress(id, bytesSent); err != nil {
@@ -462,8 +408,8 @@ func (a *App) runUpload(id int64, svc *drivev3.Service, localPath, driveFolderID
 	}
 }
 
-// UploadGetStatus is a point-in-time read of an Upload's state, for
-// reconnecting the UI after a reload (contract: Upload.GetStatus).
+// UploadGetStatus is a point-in-time read of an upload's state, used to
+// reconnect the UI after a reload.
 func (a *App) UploadGetStatus(id int64) (UploadStatusDTO, error) {
 	if a.db == nil {
 		return UploadStatusDTO{}, fmt.Errorf("upload: local database is unavailable")

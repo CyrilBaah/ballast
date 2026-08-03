@@ -1,9 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // Playwright drives the frontend against `wails dev`'s local dev server
-// (research.md §5) rather than a packaged native window, so no CDP/WebView2
-// automation bridge is needed. `wails dev` serves the frontend at
-// http://localhost:34115 by default.
+// rather than a packaged native window, so no CDP/WebView2 automation
+// bridge is needed. It serves the frontend at http://localhost:34115 by default.
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: false,

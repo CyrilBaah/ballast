@@ -12,28 +12,17 @@ import (
 	oauth2pkg "golang.org/x/oauth2"
 )
 
-// This file implements Ballast's E2E-mock mode: when the BALLAST_E2E_MOCK
-// environment variable is set, Google's real OAuth/userinfo/revoke
-// endpoints are replaced with an in-process fake server, and the
-// system-browser launch that would normally pop up a real browser window
-// is replaced with an automatic, immediate "redirect" -- so the full
-// Auth.SignIn/Auth.SignOut contract can be exercised end-to-end by
-// Playwright (research.md §5's "mock the Google OAuth consent screen ...
-// at the network boundary") without a real Google account, a real browser
-// window, or any network access.
-//
-// This exists purely to make quickstart.md Scenario 1 automatable in CI;
-// it has zero effect unless BALLAST_E2E_MOCK is set, so it never changes
-// production sign-in behavior.
+// This file implements Ballast's E2E-mock mode: when BALLAST_E2E_MOCK is
+// set, Google's OAuth/userinfo/revoke endpoints and the browser launch are
+// replaced with fakes so Playwright can run the full sign-in flow with no
+// real Google account or network access. It has no effect unless the env var is set.
 const (
 	e2eMockEnvVar        = "BALLAST_E2E_MOCK"
 	e2eOutcomeFileEnvVar = "BALLAST_E2E_OUTCOME_FILE"
 )
 
-// maybeInstallE2EMock wires a.oauthEndpointOverride/a.userInfoURL/
-// a.revokeEndpoint/a.openBrowser to an in-process mock server if
-// BALLAST_E2E_MOCK is set; otherwise it's a no-op and the real Google
-// endpoints (set just before this call in startup) are left untouched.
+// maybeInstallE2EMock points the app's OAuth/userinfo/revoke/Drive
+// endpoints at an in-process mock server if BALLAST_E2E_MOCK is set.
 func maybeInstallE2EMock(a *App) {
 	if os.Getenv(e2eMockEnvVar) == "" {
 		return
@@ -51,11 +40,7 @@ func maybeInstallE2EMock(a *App) {
 }
 
 // newE2EMockServer starts an in-process HTTP server standing in for
-// Google's token exchange, userinfo, and revoke endpoints. It always
-// succeeds with fixed test data -- the interesting behavior under test
-// (cancel/deny, persistence, sign-out) is driven by e2eBrowserOpener and by
-// the frontend/backend contract itself, not by varying the mock's
-// responses.
+// Google's token exchange, userinfo, and revoke endpoints, always succeeding with fixed test data.
 func newE2EMockServer() *httptest.Server {
 	mux := http.NewServeMux()
 
@@ -81,23 +66,13 @@ func newE2EMockServer() *httptest.Server {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Drive API mocks (research.md §5 / quickstart.md's CI notes: mock
-	// Drive API responses too, not just OAuth). Files.List: always
-	// reports no existing folders, so the frontend/Playwright suite
-	// exercises "My Drive" as the only destination (Acceptance Scenario 2
-	// of User Story 2) without needing seeded test-account state.
+	// Files.List always reports no existing folders, so tests always land on "My Drive".
 	mux.HandleFunc("/files", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"files": []map[string]string{}})
 	})
 
-	// Files.Create (simple/multipart, non-resumable -- research.md §3).
-	// Outcome "network-fail" (set via BALLAST_E2E_OUTCOME_FILE, same
-	// mechanism as the OAuth approve/deny toggle) simulates a connection
-	// drop mid-upload (Acceptance Scenario 4 of User Story 2) by hijacking
-	// and closing the connection without a response, rather than a clean
-	// HTTP error -- closer to what an actual network loss looks like to
-	// the client.
+	// outcome "network-fail" simulates a dropped connection mid-upload instead of a clean HTTP error.
 	mux.HandleFunc("/upload/drive/v3/files", func(w http.ResponseWriter, r *http.Request) {
 		if readE2EOutcome() == "network-fail" {
 			hj, ok := w.(http.Hijacker)
@@ -122,15 +97,9 @@ func newE2EMockServer() *httptest.Server {
 }
 
 // e2eBrowserOpener replaces launching a real system browser: it parses the
-// authorization URL's redirect_uri/state (exactly as a real browser
-// following Google's redirect would) and immediately performs that
-// redirect itself, either with a fake authorization code (approve) or
-// error=access_denied (deny), so no visible browser window is ever needed.
-//
-// The outcome is controlled by the file at BALLAST_E2E_OUTCOME_FILE:
-// content "deny" simulates the user cancelling consent; anything else
-// (including a missing/empty file) simulates approval. Playwright toggles
-// this between test cases without restarting the wails dev process.
+// authorization URL's redirect_uri/state and immediately redirects itself,
+// either with a fake auth code (approve) or error=access_denied (deny). The
+// outcome is read from the file at BALLAST_E2E_OUTCOME_FILE ("deny" or anything else for approve).
 func e2eBrowserOpener(authURL string) error {
 	u, err := url.Parse(authURL)
 	if err != nil {

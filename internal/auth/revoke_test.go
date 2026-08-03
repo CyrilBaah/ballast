@@ -44,10 +44,8 @@ func TestRevokeReturnsErrorOnServerFailure(t *testing.T) {
 	}
 }
 
-// TestSignOutProceedsWithDeletionEvenWhenRevokeFails is the core FR-003
-// guarantee (data-model.md: "local deletion proceeds even if the revoke
-// call fails"): a user must never be left signed in locally against a dead
-// or unreachable Google grant just because the revoke HTTP call failed.
+// TestSignOutProceedsWithDeletionEvenWhenRevokeFails guards against leaving
+// the user signed in locally after a failed revoke call.
 func TestSignOutProceedsWithDeletionEvenWhenRevokeFails(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)

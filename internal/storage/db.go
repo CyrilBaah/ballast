@@ -1,6 +1,6 @@
 // Package storage provides SQLite-backed persistence for Ballast's local
-// session/state store (Account, Upload) plus the AES-256-GCM helpers used to
-// encrypt OAuth tokens at rest, per Constitution Principle IV.
+// session/state store (Account, Upload) plus the AES-256-GCM helpers used
+// to encrypt OAuth tokens at rest.
 package storage
 
 import (
@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "modernc.org/sqlite" // pure-Go SQLite driver, no cgo (Constitution Principle VII)
+	_ "modernc.org/sqlite" // pure-Go SQLite driver, no cgo
 )
 
 const appDirName = "ballast"
@@ -52,10 +52,7 @@ func OpenAt(path string) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("storage: open sqlite db: %w", err)
 	}
-	// This feature has no concurrent writers by design (Scale/Scope in
-	// plan.md: single user, one upload at a time), so a single connection
-	// avoids SQLite's well-known "database is locked" surprises under
-	// modernc.org/sqlite's driver.
+	// A single connection avoids SQLite's "database is locked" errors, since this app never writes concurrently.
 	conn.SetMaxOpenConns(1)
 
 	if _, err := conn.Exec(`PRAGMA foreign_keys = ON;`); err != nil {

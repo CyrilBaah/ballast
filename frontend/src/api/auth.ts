@@ -1,7 +1,5 @@
 // Thin re-export wrapper around the generated Wails bindings, so call sites
-// in screens read like contracts/wails-bindings.md's conceptual "Auth.*"
-// namespace even though the Go side binds flat method names on App (see
-// app.go's naming note).
+// in screens read like an "Auth.*" namespace even though the Go side binds flat method names.
 import {
     AuthGetStatus,
     AuthSignIn,

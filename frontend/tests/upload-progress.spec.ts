@@ -3,10 +3,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
-// Covers quickstart.md Scenario 3 (progress event cadence, success
-// confirmation with a Drive link, failure messaging). Google's OAuth and
-// Drive API are mocked at the network boundary (research.md §5, mock_e2e.go)
-// via BALLAST_E2E_MOCK=1, same as upload-flow.spec.ts.
+// Google's OAuth and Drive API are mocked at the network boundary
+// (mock_e2e.go) via BALLAST_E2E_MOCK=1, same as upload-flow.spec.ts.
 const outcomeFile =
   process.env.BALLAST_E2E_OUTCOME_FILE ?? `${__dirname}/.e2e-outcome`;
 
@@ -32,7 +30,7 @@ async function signIn(page: Page) {
 }
 
 // Files.PickLocal drives a native OS dialog, which Playwright cannot
-// automate -- stub the binding instead (same approach as upload-flow.spec.ts).
+// automate, so we stub the binding instead (same approach as upload-flow.spec.ts).
 async function stubFilePicker(page: Page, file: { path: string; name: string; sizeBytes: number }) {
   await page.evaluate((f) => {
     (window as any).go.main.App.FilesPickLocal = () => Promise.resolve(f);
@@ -48,8 +46,7 @@ function makeTempFile(name: string, sizeBytes: number): { path: string; name: st
 }
 
 // Installs an upload:progress listener before the upload starts, recording
-// every payload to a window-level array so the test can assert on cadence
-// and monotonicity after the fact (SC-004; Acceptance Scenario 1).
+// every payload to a window-level array so the test can assert on cadence and monotonicity after the fact.
 async function captureProgressEvents(page: Page) {
   await page.evaluate(() => {
     (window as any).__progressEvents = [];
@@ -98,8 +95,7 @@ test('a successful upload reports non-decreasing progress and a terminal success
     expect(event.bytesSent).toBeGreaterThanOrEqual(prevBytes);
     prevBytes = event.bytesSent;
   }
-  // The final progress report must reflect the true total byte count
-  // (countingReader's guaranteed emit on the read that returns io.EOF).
+  // The final progress report must reflect the true total byte count.
   expect(events[events.length - 1].bytesSent).toBe(file.sizeBytes);
 });
 

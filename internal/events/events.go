@@ -1,6 +1,5 @@
-// Package events defines the Wails events this feature emits from Go to the
-// frontend (contracts/wails-bindings.md's "Emitted events" section) and
-// small helpers to emit them consistently.
+// Package events defines the Wails events Ballast emits from Go to the
+// frontend, and small helpers to emit them consistently.
 package events
 
 import (
@@ -9,7 +8,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// Event names, exactly as specified in contracts/wails-bindings.md.
+// Event names emitted to the frontend.
 const (
 	AuthChanged    = "auth:changed"
 	UploadProgress = "upload:progress"
@@ -17,8 +16,7 @@ const (
 	UploadFailed   = "upload:failed"
 )
 
-// AuthStatus mirrors contracts/wails-bindings.md's AuthStatus type. Emitted
-// as the payload of AuthChanged, and returned by Auth.GetStatus/Auth.SignIn.
+// AuthStatus is the payload of AuthChanged, also returned by Auth.GetStatus/Auth.SignIn.
 type AuthStatus struct {
 	SignedIn bool   `json:"signedIn"`
 	Email    string `json:"email,omitempty"`
@@ -44,15 +42,13 @@ type UploadFailedPayload struct {
 }
 
 // EmitAuthChanged notifies the frontend of a sign-in, sign-out, or a
-// force-cleared session (e.g. an unrenewable revoked/expired refresh
-// token — Edge Case in spec.md).
+// force-cleared session (e.g. an unrenewable revoked/expired refresh token).
 func EmitAuthChanged(ctx context.Context, status AuthStatus) {
 	runtime.EventsEmit(ctx, AuthChanged, status)
 }
 
-// EmitUploadProgress notifies the frontend of upload progress. Callers
-// (internal/drive's counting-reader wrapper, T034) are responsible for
-// throttling call frequency — this helper does not throttle itself.
+// EmitUploadProgress notifies the frontend of upload progress. Callers are
+// responsible for throttling call frequency — this helper does not throttle itself.
 func EmitUploadProgress(ctx context.Context, id, bytesSent, totalBytes int64) {
 	runtime.EventsEmit(ctx, UploadProgress, UploadProgressPayload{
 		ID:         id,
@@ -70,8 +66,7 @@ func EmitUploadComplete(ctx context.Context, id int64, driveFileLink string) {
 }
 
 // EmitUploadFailed notifies the frontend that an upload failed. Every
-// in_progress upload MUST eventually emit either EmitUploadComplete or
-// EmitUploadFailed, never neither (FR-009, SC-006).
+// in_progress upload must eventually emit either this or EmitUploadComplete.
 func EmitUploadFailed(ctx context.Context, id int64, reason string) {
 	runtime.EventsEmit(ctx, UploadFailed, UploadFailedPayload{
 		ID:     id,

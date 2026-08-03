@@ -154,8 +154,8 @@ link) or `upload:failed` (with reason) always fires — never neither
 
 - [X] T037 [P] Add a Quickstart section to `README.md` (it currently has none) with `wails dev` run instructions
 - [X] T038 Audit all log output at every level to confirm no credential values (tokens, ciphertext, keychain material) are ever logged (Constitution Principle IV)
-- [ ] T039 [P] Run `quickstart.md` Scenarios 1–3 manually end-to-end against a real Google test account, verifying SC-003 ("verifiably present in Drive") specifically, since CI's mocked run cannot prove it
-- [ ] T040 Run CI across macOS/Windows/Linux and confirm the keychain-unavailable fallback message (T021) actually appears on a Linux runner without a keyring daemon (Constitution Principle VII)
+- [X] T039 [P] Run `quickstart.md` Scenarios 1–3 manually end-to-end against a real Google test account, verifying SC-003 ("verifiably present in Drive") specifically, since CI's mocked run cannot prove it
+- [X] T040 Run CI across macOS/Windows/Linux and confirm the keychain-unavailable fallback message (T021) actually appears on a Linux runner without a keyring daemon (Constitution Principle VII)
 
 ---
 

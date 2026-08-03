@@ -1,8 +1,6 @@
-// Upload progress/result screen (User Story 3): listens for upload:progress,
-// upload:complete, and upload:failed for the upload just started by the
-// picker screen, and reconciles with Upload.GetStatus on mount so the UI
-// reflects the true current state even after a reload
-// (contracts/wails-bindings.md's Upload.GetStatus note).
+// Upload progress/result screen: listens for upload:progress,
+// upload:complete, and upload:failed, and reconciles with Upload.GetStatus
+// on mount so the UI reflects the true state even after a reload.
 import { GetStatus, type UploadStatus } from '../api/upload';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 

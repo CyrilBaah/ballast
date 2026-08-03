@@ -7,18 +7,13 @@ import (
 	"time"
 )
 
-// singleAccountID is the only valid Account.id in this feature. Multi
-// -account support is out of scope (spec.md Assumptions); enforced here at
-// the application layer rather than as a DB constraint, since that's a
-// concern of a future feature's data model, not this one's.
+// singleAccountID is the only valid Account.id; multi-account support isn't needed here.
 const singleAccountID = 1
 
-// ErrNoAccount is returned by GetAccount when no account row exists (the
-// signed-out state).
+// ErrNoAccount is returned by GetAccount when no account row exists (the signed-out state).
 var ErrNoAccount = errors.New("storage: no account is signed in")
 
-// Account is the in-memory representation of the single Account row
-// (data-model.md).
+// Account is the in-memory representation of the single Account row.
 type Account struct {
 	GoogleUserID           string
 	Email                  string
@@ -30,10 +25,7 @@ type Account struct {
 	CreatedAt              time.Time
 }
 
-// UpsertAccount creates or replaces the single Account row. Sign-in success
-// (data-model.md: absent -> signed_in) always results in exactly one row
-// with id=1 -- if a stale row somehow exists (it shouldn't, since sign-out
-// deletes outright), it is replaced rather than left to coexist.
+// UpsertAccount creates or replaces the single Account row.
 func (d *DB) UpsertAccount(a Account) error {
 	_, err := d.conn.Exec(`
 		INSERT INTO account (
@@ -98,9 +90,8 @@ func (d *DB) GetAccount() (*Account, error) {
 	return &a, nil
 }
 
-// DeleteAccount removes the Account row outright (data-model.md: sign-out
-// deletes the row, it does not flag it -- so a stale token can never be
-// read after sign-out). Safe to call when no account exists.
+// DeleteAccount removes the Account row outright so a stale token can never
+// be read after sign-out. Safe to call when no account exists.
 func (d *DB) DeleteAccount() error {
 	_, err := d.conn.Exec(`DELETE FROM account WHERE id = ?`, singleAccountID)
 	if err != nil {
