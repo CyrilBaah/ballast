@@ -14,12 +14,28 @@ export function AuthSignOut() {
   return window['go']['main']['App']['AuthSignOut']();
 }
 
+export function DebugRestart() {
+  return window['go']['main']['App']['DebugRestart']();
+}
+
 export function DriveListFolders(arg1) {
   return window['go']['main']['App']['DriveListFolders'](arg1);
 }
 
 export function FilesPickLocal() {
   return window['go']['main']['App']['FilesPickLocal']();
+}
+
+export function UploadCancel(arg1) {
+  return window['go']['main']['App']['UploadCancel'](arg1);
+}
+
+export function UploadConfirmRestart(arg1) {
+  return window['go']['main']['App']['UploadConfirmRestart'](arg1);
+}
+
+export function UploadGetRecoverable() {
+  return window['go']['main']['App']['UploadGetRecoverable']();
 }
 
 export function UploadGetStatus(arg1) {

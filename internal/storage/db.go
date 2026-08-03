@@ -37,11 +37,22 @@ func AppDataDir() (string, error) {
 // Open creates (if necessary) and opens the SQLite database file in the OS
 // app-data directory, then ensures the schema exists.
 func Open() (*DB, error) {
-	dir, err := AppDataDir()
+	path, err := DefaultPath()
 	if err != nil {
 		return nil, err
 	}
-	return OpenAt(filepath.Join(dir, dbFileName))
+	return OpenAt(path)
+}
+
+// DefaultPath returns the path Open uses -- exposed so a caller that needs
+// to remember it (e.g. to reopen the same file, simulating a process
+// restart for crash-recovery E2E testing) doesn't have to duplicate it.
+func DefaultPath() (string, error) {
+	dir, err := AppDataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, dbFileName), nil
 }
 
 // OpenAt opens (creating if necessary) a SQLite database at an explicit
