@@ -83,6 +83,37 @@ func TestListFoldersCallsDriveAPIAndParsesResults(t *testing.T) {
 	}
 }
 
+// A nil slice marshals to JSON `null`, which crashes the frontend's
+// `folders.forEach` (it expects `[]` for an empty result) -- guard against
+// regressing back to `var folders []Folder`.
+func TestListFoldersReturnsEmptySliceNotNilWhenNoMatches(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"files": []map[string]string{}})
+	}))
+	defer srv.Close()
+
+	svc, err := drivev3.NewService(context.Background(),
+		option.WithoutAuthentication(),
+		option.WithEndpoint(srv.URL),
+		option.WithHTTPClient(srv.Client()),
+	)
+	if err != nil {
+		t.Fatalf("drivev3.NewService: %v", err)
+	}
+
+	folders, err := ListFolders(context.Background(), svc, "")
+	if err != nil {
+		t.Fatalf("ListFolders: %v", err)
+	}
+	if folders == nil {
+		t.Fatal("ListFolders returned a nil slice for an empty result; want a non-nil empty slice")
+	}
+	if len(folders) != 0 {
+		t.Fatalf("got %d folders, want 0", len(folders))
+	}
+}
+
 func TestListFoldersPaginates(t *testing.T) {
 	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

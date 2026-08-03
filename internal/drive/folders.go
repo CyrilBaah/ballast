@@ -49,7 +49,7 @@ func buildFolderQuery(parentID string) string {
 func ListFolders(ctx context.Context, svc *drivev3.Service, parentID string) ([]Folder, error) {
 	query := buildFolderQuery(parentID)
 
-	var folders []Folder
+	folders := []Folder{}
 	pageToken := ""
 	for {
 		call := svc.Files.List().
