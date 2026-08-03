@@ -60,7 +60,17 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
+      # Skipped on Linux: wails dev's native webview crash-loops under Xvfb
+      # for reasons not yet root-caused (tracked in
+      # https://github.com/CyrilBaah/ballast/issues/2 -- see that issue for
+      # everything already tried). go build/vet/test above already pass on
+      # Linux, and the full Playwright suite passes on macOS + Windows, so
+      # this isn't blocking -- it's disabled here rather than
+      # continue-on-error'd so CI doesn't burn time on a run that's known to
+      # fail. Whoever picks up issue #2: remove the `if:` condition on this
+      # step and the one below to re-enable and test your fix.
       - name: Run wails dev in background (OAuth/Drive mocked at the network boundary)
+        if: runner.os != 'Linux'
         working-directory: .
         shell: bash
         env:
@@ -102,16 +112,10 @@ jobs:
             sleep 2
           done
 
-      # Ubuntu's Playwright run is known-flaky: wails dev's native webview
-      # crash-loops under Xvfb for reasons not yet root-caused (see
-      # https://github.com/CyrilBaah/ballast/issues/2). go build/vet/test
-      # and the full Playwright suite already pass on macOS + Windows, so
-      # this doesn't block merging -- don't let this one platform's known
-      # issue fail the check while it's being tracked separately.
       - name: Run Playwright suite
         id: playwright
+        if: runner.os != 'Linux'
         working-directory: frontend
-        continue-on-error: ${{ runner.os == 'Linux' }}
         env:
           CI: "true"
           BALLAST_E2E_OUTCOME_FILE: "${{ github.workspace }}/e2e-outcome.txt"
