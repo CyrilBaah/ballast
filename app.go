@@ -31,6 +31,15 @@ import (
 type App struct {
 	ctx context.Context
 	db  *storage.DB
+	// dbPath is remembered so DebugRestart (E2E-test-only) can reopen the
+	// same SQLite file, simulating a process restart without actually
+	// killing the OS process.
+	dbPath string
+	// uploadCancel stops the currently-running upload goroutine's
+	// resumable-session loop, if any. DebugRestart (E2E-test-only) calls
+	// it to simulate the current process's in-flight work dying, rather
+	// than leaving it running against a freshly-reopened DB handle.
+	uploadCancel context.CancelFunc
 	// encKey encrypts token columns at rest and is loaded from the OS
 	// keychain at startup. It stays in memory only, never on disk.
 	encKey []byte
@@ -60,6 +69,11 @@ func (a *App) startup(ctx context.Context) {
 	a.openBrowser = browser.OpenURL
 	maybeInstallE2EMock(a)
 
+	if path, err := storage.DefaultPath(); err != nil {
+		logging.Error("failed to resolve local database path", "error", err)
+	} else {
+		a.dbPath = path
+	}
 	db, err := storage.Open()
 	if err != nil {
 		logging.Error("failed to open local database", "error", err)
@@ -297,6 +311,27 @@ func (a *App) DriveListFolders(parentId string) ([]drive.Folder, error) {
 // driveService builds an authenticated Drive API client for the current
 // session, refreshing the access token first if it's near expiry.
 func (a *App) driveService(ctx context.Context) (*drivev3.Service, error) {
+	client, err := a.driveHTTPClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	opts := []option.ClientOption{option.WithHTTPClient(client)}
+	if a.driveAPIEndpointOverride != "" {
+		opts = append(opts, option.WithEndpoint(a.driveAPIEndpointOverride))
+	}
+	svc, err := drivev3.NewService(ctx, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("drive: build client: %w", err)
+	}
+	return svc, nil
+}
+
+// driveHTTPClient builds an authenticated HTTP client for the current
+// session's Drive access, refreshing the access token first if it's near
+// expiry. Shared by driveService (JSON API calls via the SDK) and the raw
+// resumable-upload primitives in internal/drive, which talk to Drive
+// directly over net/http (research.md §1).
+func (a *App) driveHTTPClient(ctx context.Context) (*http.Client, error) {
 	if err := a.requireSignedIn(); err != nil {
 		return nil, err
 	}
@@ -331,32 +366,45 @@ func (a *App) driveService(ctx context.Context) (*drivev3.Service, error) {
 		RefreshToken: string(refreshPlain),
 		Expiry:       acct.AccessTokenExpiry,
 	}
-	client := a.oauthConfig().Client(ctx, tok)
+	return a.oauthConfig().Client(ctx, tok), nil
+}
 
-	opts := []option.ClientOption{option.WithHTTPClient(client)}
+// driveUploadAPIBase returns the host used for the raw resumable-upload
+// HTTP calls -- production Drive, or the E2E mock server if overridden.
+func (a *App) driveUploadAPIBase() string {
 	if a.driveAPIEndpointOverride != "" {
-		opts = append(opts, option.WithEndpoint(a.driveAPIEndpointOverride))
+		return a.driveAPIEndpointOverride
 	}
-	svc, err := drivev3.NewService(ctx, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("drive: build client: %w", err)
-	}
-	return svc, nil
+	return drive.ProdAPIBase
 }
 
 // --- Upload.* -----------------------------------------------------------
 
 // UploadStatusDTO is the upload status sent to the frontend.
 type UploadStatusDTO struct {
-	Status        string `json:"status"`
-	BytesSent     int64  `json:"bytesSent"`
-	TotalBytes    int64  `json:"totalBytes"`
-	DriveFileLink string `json:"driveFileLink,omitempty"`
-	FailureReason string `json:"failureReason,omitempty"`
+	Status                     string `json:"status"`
+	BytesSent                  int64  `json:"bytesSent"`
+	TotalBytes                 int64  `json:"totalBytes"`
+	DriveFileLink              string `json:"driveFileLink,omitempty"`
+	FailureReason              string `json:"failureReason,omitempty"`
+	AwaitingConfirmationReason string `json:"awaitingConfirmationReason,omitempty"`
+}
+
+// RecoverableUploadDTO describes the single non-terminal upload left over
+// from a previous run, if any (contracts/wails-bindings.md).
+type RecoverableUploadDTO struct {
+	ID                         int64  `json:"id"`
+	LocalPath                  string `json:"localPath"`
+	FileName                   string `json:"fileName"`
+	Status                     string `json:"status"`
+	BytesSent                  int64  `json:"bytesSent"`
+	TotalBytes                 int64  `json:"totalBytes"`
+	AwaitingConfirmationReason string `json:"awaitingConfirmationReason,omitempty"`
 }
 
 // UploadStart verifies the local file still exists, creates an Upload row,
-// and kicks off the transfer in the background.
+// and kicks off the transfer in the background. Rejects up front (FR-013)
+// if another upload is already in_progress, paused, or awaiting_confirmation.
 func (a *App) UploadStart(localPath, driveFolderId string) (int64, error) {
 	if err := a.requireSignedIn(); err != nil {
 		return 0, err
@@ -370,12 +418,12 @@ func (a *App) UploadStart(localPath, driveFolderId string) (int64, error) {
 		return 0, fmt.Errorf("upload: local file can no longer be found: %w", err)
 	}
 
-	svc, err := a.driveService(a.ctx)
+	client, err := a.driveHTTPClient(a.ctx)
 	if err != nil {
 		return 0, err
 	}
 
-	u, err := a.db.CreateUpload(localPath, info.Size(), driveFolderId)
+	u, err := a.db.CreateUpload(localPath, info.Size(), info.ModTime(), driveFolderId)
 	if err != nil {
 		return 0, fmt.Errorf("upload: create upload record: %w", err)
 	}
@@ -383,29 +431,75 @@ func (a *App) UploadStart(localPath, driveFolderId string) (int64, error) {
 		return 0, fmt.Errorf("upload: %w", err)
 	}
 
-	go a.runUpload(u.ID, svc, localPath, driveFolderId, info.Size())
+	baseline := drive.IdentityBaseline{Size: info.Size(), Mtime: info.ModTime()}
+	a.startUpload(u.ID, client, localPath, driveFolderId, info.Size(), baseline, drive.ResumeState{})
 
 	return u.ID, nil
 }
 
-// runUpload performs the transfer and records its outcome. It runs on the
-// app's lifetime context since it keeps going after UploadStart has already returned.
-func (a *App) runUpload(id int64, svc *drivev3.Service, localPath, driveFolderID string, totalBytes int64) {
-	onProgress := func(bytesSent int64) {
-		if err := a.db.UpdateUploadProgress(id, bytesSent); err != nil {
-			logging.Warn("failed to record upload progress", "uploadId", id, "error", err)
-		}
+// startUpload launches runUpload in the background under a context
+// derived from the app's lifetime context, remembering its cancel func so
+// DebugRestart (E2E-test-only) can stop it -- simulating the current
+// process's in-flight work dying on a "restart" without needing to
+// actually kill the OS process.
+func (a *App) startUpload(id int64, client *http.Client, localPath, driveFolderID string, totalBytes int64, baseline drive.IdentityBaseline, resume drive.ResumeState) {
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.uploadCancel = cancel
+	go a.runUpload(ctx, id, client, localPath, driveFolderID, totalBytes, baseline, resume)
+}
+
+// runUpload drives one upload's resumable session to a terminal outcome
+// and records it. ctx governs only the resumable transfer itself (so it
+// can be cancelled independently, e.g. by DebugRestart); events are still
+// emitted against the app's lifetime context. It keeps going after the
+// call that launched it has already returned; resume is the checkpoint to
+// continue from (zero value for a brand-new upload).
+func (a *App) runUpload(ctx context.Context, id int64, client *http.Client, localPath, driveFolderID string, totalBytes int64, baseline drive.IdentityBaseline, resume drive.ResumeState) {
+	cb := drive.UploadCallbacks{
+		OnChunkAcked: func(bytesSent int64, sessionURI string, hashState []byte) {
+			if err := a.db.UpdateUploadProgress(id, bytesSent, sessionURI, hashState); err != nil {
+				logging.Warn("failed to record upload progress", "uploadId", id, "error", err)
+			}
+			events.EmitUploadProgress(a.ctx, id, bytesSent, totalBytes)
+		},
+		OnPaused: func() {
+			if err := a.db.SetUploadPaused(id); err != nil {
+				logging.Warn("failed to record upload paused", "uploadId", id, "error", err)
+			}
+			events.EmitUploadPaused(a.ctx, id, time.Now())
+		},
+		OnResumed: func() {
+			if err := a.db.SetUploadResumed(id); err != nil {
+				logging.Warn("failed to record upload resumed", "uploadId", id, "error", err)
+			}
+		},
 	}
-	result, err := drive.UploadFile(a.ctx, svc, id, localPath, driveFolderID, totalBytes, onProgress)
+
+	result, err := drive.UploadFile(a.ctx, client, a.driveUploadAPIBase(), id, localPath, driveFolderID, totalBytes, baseline, resume, cb)
 	if err != nil {
-		if setErr := a.db.SetUploadFailed(id, err.Error()); setErr != nil {
-			logging.Warn("failed to record upload failure", "uploadId", id, "error", setErr)
+		var outcome *drive.TerminalOutcome
+		if errors.As(err, &outcome) {
+			if outcome.Bucket == drive.TerminalRecoverable {
+				if setErr := a.db.SetUploadAwaitingConfirmation(id, outcome.Reason); setErr != nil {
+					logging.Warn("failed to record upload awaiting_confirmation", "uploadId", id, "error", setErr)
+				}
+				events.EmitUploadAwaitingConfirmation(a.ctx, id, outcome.Reason)
+			} else {
+				if setErr := a.db.SetUploadFailed(id, outcome.Reason); setErr != nil {
+					logging.Warn("failed to record upload failure", "uploadId", id, "error", setErr)
+				}
+				events.EmitUploadFailed(a.ctx, id, outcome.Reason)
+			}
 		}
+		// A non-TerminalOutcome error means ctx was cancelled (the app is
+		// shutting down): nothing to record -- the last checkpoint already
+		// on disk is what a future launch resumes from.
 		return
 	}
 	if setErr := a.db.SetUploadSucceeded(id, result.FileID, result.WebViewLink); setErr != nil {
 		logging.Warn("failed to record upload success", "uploadId", id, "error", setErr)
 	}
+	events.EmitUploadComplete(a.ctx, id, result.WebViewLink)
 }
 
 // UploadGetStatus is a point-in-time read of an upload's state, used to
@@ -429,5 +523,188 @@ func (a *App) UploadGetStatus(id int64) (UploadStatusDTO, error) {
 	if u.FailureReason != nil {
 		dto.FailureReason = *u.FailureReason
 	}
+	if u.AwaitingConfirmationReason != nil {
+		dto.AwaitingConfirmationReason = *u.AwaitingConfirmationReason
+	}
 	return dto, nil
+}
+
+// UploadGetRecoverable returns the single non-terminal upload left over
+// from a previous run, if any (research.md §7). If it's still paused, its
+// source-file-identity check (research.md §5) runs here: passing it means
+// the backend has already begun resuming it in the background by the
+// time this call returns; failing it routes the upload to
+// awaiting_confirmation instead, with no auto-resume.
+func (a *App) UploadGetRecoverable() (*RecoverableUploadDTO, error) {
+	if err := a.requireSignedIn(); err != nil {
+		return nil, err
+	}
+	u, err := a.db.GetRecoverableUpload()
+	if err != nil {
+		return nil, err
+	}
+	if u == nil {
+		return nil, nil
+	}
+
+	if u.Status == storage.UploadPaused {
+		client, cerr := a.driveHTTPClient(a.ctx)
+		if cerr != nil {
+			return nil, cerr
+		}
+		baseline := drive.IdentityBaseline{Size: u.LocalSizeBytes, Mtime: u.LocalMtime}
+
+		identityOK, statErr := drive.CheapIdentityCheck(u.LocalPath, baseline)
+		if statErr != nil {
+			reason := fmt.Sprintf("local file can no longer be found: %v", statErr)
+			if setErr := a.db.SetUploadFailed(u.ID, reason); setErr != nil {
+				logging.Warn("failed to record upload failure", "uploadId", u.ID, "error", setErr)
+			}
+			events.EmitUploadFailed(a.ctx, u.ID, reason)
+			return nil, nil
+		}
+		if !identityOK {
+			verified, verifyErr := drive.VerifyPrefix(u.LocalPath, u.BytesSent, u.ContentHashState)
+			if verifyErr != nil {
+				reason := fmt.Sprintf("local file can no longer be found: %v", verifyErr)
+				if setErr := a.db.SetUploadFailed(u.ID, reason); setErr != nil {
+					logging.Warn("failed to record upload failure", "uploadId", u.ID, "error", setErr)
+				}
+				events.EmitUploadFailed(a.ctx, u.ID, reason)
+				return nil, nil
+			}
+			if !verified {
+				if setErr := a.db.SetUploadAwaitingConfirmation(u.ID, storage.AwaitingConfirmationFileChanged); setErr != nil {
+					logging.Warn("failed to record upload awaiting_confirmation", "uploadId", u.ID, "error", setErr)
+				}
+				events.EmitUploadAwaitingConfirmation(a.ctx, u.ID, storage.AwaitingConfirmationFileChanged)
+				u.Status = storage.UploadAwaitingConfirmation
+				reason := storage.AwaitingConfirmationFileChanged
+				u.AwaitingConfirmationReason = &reason
+			}
+		}
+
+		if u.Status == storage.UploadPaused {
+			sessionURI := ""
+			if u.SessionURI != nil {
+				sessionURI = *u.SessionURI
+			}
+			resume := drive.ResumeState{SessionURI: sessionURI, BytesSent: u.BytesSent, ContentHashState: u.ContentHashState}
+			a.startUpload(u.ID, client, u.LocalPath, u.DriveFolderID, u.LocalSizeBytes, baseline, resume)
+		}
+	}
+
+	dto := &RecoverableUploadDTO{
+		ID:         u.ID,
+		LocalPath:  u.LocalPath,
+		FileName:   filepath.Base(u.LocalPath),
+		Status:     string(u.Status),
+		BytesSent:  u.BytesSent,
+		TotalBytes: u.LocalSizeBytes,
+	}
+	if u.AwaitingConfirmationReason != nil {
+		dto.AwaitingConfirmationReason = *u.AwaitingConfirmationReason
+	}
+	return dto, nil
+}
+
+// UploadConfirmRestart restarts an awaiting_confirmation upload from byte
+// 0 against a brand-new Drive session (FR-010). Only valid when the
+// upload's status is currently awaiting_confirmation.
+func (a *App) UploadConfirmRestart(id int64) error {
+	if err := a.requireSignedIn(); err != nil {
+		return err
+	}
+	u, err := a.db.GetUpload(id)
+	if err != nil {
+		return err
+	}
+	if u.Status != storage.UploadAwaitingConfirmation {
+		return fmt.Errorf("upload: cannot restart an upload that is not awaiting confirmation")
+	}
+
+	info, err := os.Stat(u.LocalPath)
+	if err != nil {
+		reason := fmt.Sprintf("local file can no longer be found: %v", err)
+		if setErr := a.db.SetUploadFailed(id, reason); setErr != nil {
+			logging.Warn("failed to record upload failure", "uploadId", id, "error", setErr)
+		}
+		events.EmitUploadFailed(a.ctx, id, reason)
+		return fmt.Errorf("upload: %s", reason)
+	}
+
+	if err := a.db.ResetUploadForRestart(id, info.Size(), info.ModTime()); err != nil {
+		return fmt.Errorf("upload: %w", err)
+	}
+
+	client, err := a.driveHTTPClient(a.ctx)
+	if err != nil {
+		return err
+	}
+	baseline := drive.IdentityBaseline{Size: info.Size(), Mtime: info.ModTime()}
+	a.startUpload(id, client, u.LocalPath, u.DriveFolderID, info.Size(), baseline, drive.ResumeState{})
+	return nil
+}
+
+// UploadCancel transitions a paused or awaiting_confirmation upload
+// directly to cancelled (FR-014), freeing the single-active-upload slot.
+// Makes a best-effort attempt to release the Drive session first,
+// ignoring its result -- local cancellation must succeed regardless.
+func (a *App) UploadCancel(id int64) error {
+	if a.db == nil {
+		return fmt.Errorf("upload: local database is unavailable")
+	}
+	u, err := a.db.GetUpload(id)
+	if err != nil {
+		return err
+	}
+	if u.SessionURI != nil {
+		if client, cerr := a.driveHTTPClient(a.ctx); cerr == nil {
+			drive.ReleaseSession(a.ctx, client, *u.SessionURI)
+		}
+	}
+	return a.db.SetUploadCancelled(id)
+}
+
+// --- Debug.* (E2E-test-only) --------------------------------------------
+
+// DebugRestart discards this App's in-memory state (DB connection, auth
+// token cache) and reopens a fresh storage.DB against the same on-disk
+// SQLite file, then re-runs the same keychain/E2E-mock wiring startup
+// does. It exists solely so Playwright can exercise User Story 2's
+// crash-recovery path (quickstart.md Scenario 2) -- SQLite's own
+// durability, not any OS crash-reporting mechanism, is what this feature
+// actually relies on (Constitution Principle VII), so reopening a fresh
+// handle against the same file is a faithful simulation of a process
+// restart without needing to kill and relaunch the OS process itself.
+// Only available in E2E mock mode; rejects otherwise.
+func (a *App) DebugRestart() error {
+	if a.driveAPIEndpointOverride == "" {
+		return fmt.Errorf("debug: DebugRestart is only available in E2E mock mode")
+	}
+	if a.uploadCancel != nil {
+		a.uploadCancel()
+		a.uploadCancel = nil
+	}
+	if a.db != nil {
+		if err := a.db.Close(); err != nil {
+			logging.Warn("error closing database during DebugRestart", "error", err)
+		}
+	}
+	a.db = nil
+	a.encKey = nil
+
+	db, err := storage.OpenAt(a.dbPath)
+	if err != nil {
+		return fmt.Errorf("debug: reopen database: %w", err)
+	}
+	a.db = db
+
+	key, err := keychain.GetOrCreateKey()
+	if err != nil {
+		logging.Warn("OS keychain unavailable after DebugRestart", "error", err)
+		return nil
+	}
+	a.encKey = key
+	return nil
 }

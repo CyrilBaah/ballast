@@ -87,7 +87,7 @@ test('a file that vanishes before upload starts is rejected with a clear message
   await expect(page.locator('.progress-screen')).toHaveCount(0);
 });
 
-test('network loss mid-upload ends in a failed status, not a hang (Acceptance Scenario 4)', async ({
+test('network loss mid-upload pauses (not fails) and completes once connectivity returns (Feature 002, FR-003/FR-007)', async ({
   page,
 }) => {
   setOutcome('network-fail');
@@ -98,13 +98,28 @@ test('network loss mid-upload ends in a failed status, not a hang (Acceptance Sc
 
   await expect(page.locator('.progress-screen')).toBeVisible({ timeout: 10_000 });
 
-  // Poll Upload.GetStatus until it reaches a terminal state.
   const uploadId = await page.evaluate(async () => {
     const text = document.querySelector('.progress-screen')!.textContent ?? '';
     const match = text.match(/upload #(\d+)/);
     return match ? Number(match[1]) : null;
   });
   expect(uploadId).not.toBeNull();
+
+  // A dropped connection must pause (auto-retrying), never fail outright.
+  await expect
+    .poll(
+      async () => {
+        const status = await page.evaluate(
+          (id) => (window as any).go.main.App.UploadGetStatus(id),
+          uploadId,
+        );
+        return status.status;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe('paused');
+
+  setOutcome('approve');
 
   await expect
     .poll(
@@ -117,7 +132,5 @@ test('network loss mid-upload ends in a failed status, not a hang (Acceptance Sc
       },
       { timeout: 15_000 },
     )
-    .toBe('failed');
-
-  setOutcome('approve');
+    .toBe('succeeded');
 });

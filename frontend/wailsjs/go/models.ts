@@ -56,12 +56,37 @@ export namespace main {
 	        this.sizeBytes = source["sizeBytes"];
 	    }
 	}
+	export class RecoverableUploadDTO {
+	    id: number;
+	    localPath: string;
+	    fileName: string;
+	    status: string;
+	    bytesSent: number;
+	    totalBytes: number;
+	    awaitingConfirmationReason?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RecoverableUploadDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.localPath = source["localPath"];
+	        this.fileName = source["fileName"];
+	        this.status = source["status"];
+	        this.bytesSent = source["bytesSent"];
+	        this.totalBytes = source["totalBytes"];
+	        this.awaitingConfirmationReason = source["awaitingConfirmationReason"];
+	    }
+	}
 	export class UploadStatusDTO {
 	    status: string;
 	    bytesSent: number;
 	    totalBytes: number;
 	    driveFileLink?: string;
 	    failureReason?: string;
+	    awaitingConfirmationReason?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new UploadStatusDTO(source);
@@ -74,6 +99,7 @@ export namespace main {
 	        this.totalBytes = source["totalBytes"];
 	        this.driveFileLink = source["driveFileLink"];
 	        this.failureReason = source["failureReason"];
+	        this.awaitingConfirmationReason = source["awaitingConfirmationReason"];
 	    }
 	}
 

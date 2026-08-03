@@ -99,7 +99,7 @@ test('a successful upload reports non-decreasing progress and a terminal success
   expect(events[events.length - 1].bytesSent).toBe(file.sizeBytes);
 });
 
-test('network loss mid-upload ends in a clear failure message, never an indefinite spinner (Acceptance Scenario 3, FR-009, SC-006)', async ({
+test('network loss mid-upload shows a retrying state, never a failure, and completes once connectivity returns (Feature 002, FR-003/FR-007)', async ({
   page,
 }) => {
   setOutcome('network-fail');
@@ -109,8 +109,14 @@ test('network loss mid-upload ends in a clear failure message, never an indefini
   await page.click('#upload-btn');
 
   await expect(page.locator('.progress-screen')).toBeVisible({ timeout: 10_000 });
-  await expect(page.locator('.progress-result')).toContainText('Upload failed', {
+  await expect(page.locator('.progress-result')).toContainText('retrying', {
     timeout: 15_000,
   });
-  await expect(page.locator('.progress-result')).toHaveClass(/progress-result--failed/);
+  await expect(page.locator('.progress-result')).toHaveClass(/progress-result--retrying/);
+  await expect(page.locator('.progress-result')).not.toHaveClass(/progress-result--failed/);
+
+  setOutcome('approve');
+  await expect(page.locator('.progress-result')).toContainText('Upload complete', {
+    timeout: 15_000,
+  });
 });
