@@ -1,5 +1,6 @@
 # Go
 /bin/
+/ballast
 *.exe
 *.exe~
 *.dll
@@ -13,6 +14,7 @@ vendor/
 /build/bin/
 /frontend/dist/
 /frontend/node_modules/
+/frontend/package.json.md5
 
 # Node (frontend tooling)
 node_modules/
@@ -35,6 +37,12 @@ yarn-error.log*
 # OS cruft
 .DS_Store
 Thumbs.db
+
+# Playwright / E2E-mock runtime artifacts
+/frontend/test-results/
+/frontend/playwright-report/
+/frontend/tests/.e2e-outcome
+/e2e-outcome.txt
 
 # IDE
 .vscode/

@@ -26,6 +26,32 @@ application yet. See [Development Process](#development-process) below.
   at rest, key held in the OS keychain)
 - **Testing**: Go testing, Playwright, GitHub Actions
 
+## Quickstart
+
+Requires Go 1.22+, Node 20+, and the [Wails CLI](https://wails.io/docs/gettingstarted/installation) (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`).
+
+```sh
+wails dev
+```
+
+This builds the Go backend, starts the frontend dev server, and opens
+Ballast's native window. To exercise Google sign-in, set your own OAuth
+desktop-app client credentials first:
+
+```sh
+export BALLAST_GOOGLE_CLIENT_ID=your-client-id
+export BALLAST_GOOGLE_CLIENT_SECRET=your-client-secret
+wails dev
+```
+
+To run the test suites:
+
+```sh
+go test ./...                 # Go unit tests
+cd frontend && npm ci && npx playwright install --with-deps chromium
+npm test                      # Playwright, against a running `wails dev` (BALLAST_E2E_MOCK=1 mocks Google/Drive)
+```
+
 ## Development Process
 
 This project is built solo, with AI coding agents, using

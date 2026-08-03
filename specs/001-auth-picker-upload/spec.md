@@ -8,6 +8,13 @@
 
 **Input**: User description: "Feature 1 of the Ballast project: Google sign-in, local file/folder picker, and a basic (non-resumable) upload to Google Drive. This is the smallest end-to-end vertical slice — it gets a real working desktop app (auth → pick a local file → pick a Drive destination folder → upload it → confirm success) before the resumable/adaptive upload engine (a later feature) is built underneath it."
 
+## Clarifications
+
+### Session 2026-08-02
+
+- Q: Does "select a file" mean the user can only pick a single local file, or can they also pick a whole local folder (with the app uploading its contents) as the upload source? → A: File only — user selects exactly one local file (FR-004); "folder" in the feature title refers to the Drive destination folder browser (FR-005), not a local source.
+- Q: When a signed-in user explicitly signs out (FR-003), should the app revoke the Google OAuth grant at Google's end, or just clear the app's local session? → A: Revoke at Google — sign-out revokes the OAuth grant server-side in addition to clearing local state; a future sign-in requires fresh Google consent.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Sign in with Google (Priority: P1)
@@ -126,7 +133,10 @@ upload-initiation flow itself.
 - **FR-002**: System MUST persist the authenticated session across app
   restarts so the user does not need to sign in on every launch.
 - **FR-003**: System MUST allow the user to explicitly sign out, returning
-  the app to a signed-out state.
+  the app to a signed-out state. Signing out MUST revoke the Google OAuth
+  grant server-side (in addition to clearing the local session), so the app
+  no longer appears as a connected app in the user's Google Account and a
+  future sign-in requires fresh Google consent.
 - **FR-004**: System MUST allow the signed-in user to select exactly one
   file from their local device as the upload source.
 - **FR-005**: System MUST allow the signed-in user to browse their Google
@@ -183,6 +193,10 @@ upload-initiation flow itself.
 
 - Single Google account per installation for this feature; multi-account
   support is explicitly out of scope (open question for a later feature).
+- "File/Folder Picker" in the feature title refers to browsing and picking a
+  Drive *destination* folder (FR-005); the local upload source is a single
+  file only (FR-004). Local folder selection/upload is out of scope for this
+  feature.
 - The user already has a Google account with Google Drive access; this
   feature does not cover Google account creation.
 - No artificial file-size limit is imposed by this feature. Reliability of
