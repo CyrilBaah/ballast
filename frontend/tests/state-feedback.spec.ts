@@ -29,9 +29,13 @@ async function resetToSignedOut(page: Page) {
   await waitForBindings(page);
 }
 
-async function signIn(page: Page) {
+// outcomeDuringSignIn is applied *after* resetToSignedOut's own internal
+// 'approve' reset and *before* the sign-in click, so it's still in effect
+// for the picker's automatic on-mount folder load -- setting it only
+// before calling signIn() would get clobbered by resetToSignedOut.
+async function signIn(page: Page, outcomeDuringSignIn: string = 'approve') {
   await resetToSignedOut(page);
-  setOutcome('approve');
+  setOutcome(outcomeDuringSignIn);
   await page.click('#signin-btn');
   await expect(page.locator('.picker-screen')).toBeVisible({ timeout: 10_000 });
 }
@@ -59,8 +63,7 @@ test.afterEach(() => {
 test("the picker shows a loading indicator while folders are loading, not a blank list (Acceptance Scenario 1)", async ({
   page,
 }) => {
-  setOutcome('slow-list');
-  await signIn(page);
+  await signIn(page, 'slow-list');
 
   const loading = page.locator('#picker-folder-loading');
   await expect(loading).toBeVisible();
@@ -74,8 +77,7 @@ test("the picker shows a loading indicator while folders are loading, not a blan
 test('a folder-load failure renders the shared error-state treatment with a plain-language message (Acceptance Scenario 2)', async ({
   page,
 }) => {
-  setOutcome('500-list');
-  await signIn(page);
+  await signIn(page, '500-list');
 
   const error = page.locator('#picker-folder-error');
   await expect(error).toHaveClass(/state-error/, { timeout: 10_000 });
