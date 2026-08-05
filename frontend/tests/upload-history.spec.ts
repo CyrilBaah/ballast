@@ -46,6 +46,16 @@ function makeTempFile(name: string, sizeBytes: number): { path: string; name: st
   return { path: filePath, name, sizeBytes: stat.size };
 }
 
+// Upload.ListRecent reads the same local SQLite file across separate test
+// runs (it isn't wiped between `wails dev` restarts), so a fixed filename
+// re-used by this spec on a second run would collide with its own earlier
+// row and break the hasText lookups below with a strict-mode multi-match.
+// A unique suffix per run keeps each row identifiable while the "history-*"
+// prefix stays stable enough for hasText to distinguish rows within one run.
+function uniqueFileName(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`;
+}
+
 test.afterEach(() => {
   setOutcome('approve');
 });
@@ -55,7 +65,8 @@ test('history shows a completed upload and a second upload updating live, withou
 }) => {
   await signIn(page);
 
-  const file1 = makeTempFile('history-one.txt', 4_000);
+  const name1 = uniqueFileName('history-one');
+  const file1 = makeTempFile(name1, 4_000);
   await stubFilePicker(page, file1);
   await page.click('#pick-file-btn');
   await page.click('#upload-btn');
@@ -63,19 +74,23 @@ test('history shows a completed upload and a second upload updating live, withou
 
   await page.click('#nav-upload');
   await expect(page.locator('.picker-screen')).toBeVisible({ timeout: 10_000 });
-  const file2 = makeTempFile('history-two.txt', 4_000);
+  const name2 = uniqueFileName('history-two');
+  const file2 = makeTempFile(name2, 4_000);
   await stubFilePicker(page, file2);
   await page.click('#pick-file-btn');
   await page.click('#upload-btn');
 
   await page.click('#nav-history');
   await expect(page.locator('.history-screen')).toBeVisible({ timeout: 10_000 });
-  await expect(page.locator('.history-row')).toHaveCount(2, { timeout: 10_000 });
 
-  const row1 = page.locator('.history-row', { hasText: 'history-one.txt' });
+  // Asserts on these two rows specifically, not the list's total count --
+  // Upload.ListRecent deliberately returns every upload in the shared local
+  // DB (data-model.md), so other spec files' uploads may also be present.
+  const row1 = page.locator('.history-row', { hasText: name1 });
+  await expect(row1).toBeVisible({ timeout: 10_000 });
   await expect(row1.locator('.history-row-status')).toHaveClass(/state-success/);
 
-  const row2 = page.locator('.history-row', { hasText: 'history-two.txt' });
+  const row2 = page.locator('.history-row', { hasText: name2 });
   // It updates live as upload:progress/upload:complete arrive, without
   // ever needing to leave the history screen or re-fetch.
   await expect(row2.locator('.history-row-status')).toHaveClass(/state-success/, { timeout: 15_000 });
@@ -86,7 +101,8 @@ test('a forced terminal failure is clearly marked, visually distinct from a succ
 }) => {
   await signIn(page);
 
-  const file1 = makeTempFile('history-ok.txt', 4_000);
+  const okName = uniqueFileName('history-ok');
+  const file1 = makeTempFile(okName, 4_000);
   await stubFilePicker(page, file1);
   await page.click('#pick-file-btn');
   await page.click('#upload-btn');
@@ -94,7 +110,8 @@ test('a forced terminal failure is clearly marked, visually distinct from a succ
 
   await page.click('#nav-upload');
   await expect(page.locator('.picker-screen')).toBeVisible({ timeout: 10_000 });
-  const file2 = makeTempFile('history-fail.txt', 4_000);
+  const failName = uniqueFileName('history-fail');
+  const file2 = makeTempFile(failName, 4_000);
   await stubFilePicker(page, file2);
   await page.click('#pick-file-btn');
   setOutcome('403-quota');
@@ -103,11 +120,11 @@ test('a forced terminal failure is clearly marked, visually distinct from a succ
   await page.click('#nav-history');
   await expect(page.locator('.history-screen')).toBeVisible({ timeout: 10_000 });
 
-  const failedRow = page.locator('.history-row', { hasText: 'history-fail.txt' });
+  const failedRow = page.locator('.history-row', { hasText: failName });
   await expect(failedRow.locator('.history-row-status')).toHaveClass(/state-error/, { timeout: 15_000 });
   await expect(failedRow.locator('.history-row-status')).toContainText('Failed');
 
-  const okRow = page.locator('.history-row', { hasText: 'history-ok.txt' });
+  const okRow = page.locator('.history-row', { hasText: okName });
   await expect(okRow.locator('.history-row-status')).toHaveClass(/state-success/);
 });
 
@@ -116,7 +133,8 @@ test("an upload's status persists across a restart while it's paused (Edge Case:
 }) => {
   await signIn(page);
   setOutcome('network-fail');
-  const file = makeTempFile('history-restart.txt', 4_000);
+  const restartName = uniqueFileName('history-restart');
+  const file = makeTempFile(restartName, 4_000);
   await stubFilePicker(page, file);
   await page.click('#pick-file-btn');
   await page.click('#upload-btn');
@@ -134,6 +152,6 @@ test("an upload's status persists across a restart while it's paused (Edge Case:
   await page.click('#nav-history');
   await expect(page.locator('.history-screen')).toBeVisible({ timeout: 10_000 });
 
-  const row = page.locator('.history-row', { hasText: 'history-restart.txt' });
+  const row = page.locator('.history-row', { hasText: restartName });
   await expect(row.locator('.history-row-status')).toHaveClass(/state-warning/, { timeout: 10_000 });
 });
