@@ -12,12 +12,6 @@ import (
 	"strings"
 )
 
-// ChunkSize is the fixed resumable-upload chunk size: 8 MiB (32 x the
-// protocol's 256 KiB minimum), per research.md §2 and Constitution
-// Principle II. Every chunk except the final one is sent as exactly this
-// many bytes, strictly in order, one at a time.
-const ChunkSize = 8 * 1024 * 1024
-
 // resumeIncomplete is Drive's resumable-upload status code for "chunk
 // accepted, more bytes expected" -- numerically the same as
 // http.StatusPermanentRedirect, but Drive's use of it here is

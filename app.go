@@ -456,8 +456,8 @@ func (a *App) startUpload(id int64, client *http.Client, localPath, driveFolderI
 // continue from (zero value for a brand-new upload).
 func (a *App) runUpload(ctx context.Context, id int64, client *http.Client, localPath, driveFolderID string, totalBytes int64, baseline drive.IdentityBaseline, resume drive.ResumeState) {
 	cb := drive.UploadCallbacks{
-		OnChunkAcked: func(bytesSent int64, sessionURI string, hashState []byte) {
-			if err := a.db.UpdateUploadProgress(id, bytesSent, sessionURI, hashState); err != nil {
+		OnChunkAcked: func(bytesSent int64, sessionURI string, hashState []byte, chunkSize int64, consecutiveSuccesses int) {
+			if err := a.db.UpdateUploadProgress(id, bytesSent, sessionURI, hashState, chunkSize, consecutiveSuccesses); err != nil {
 				logging.Warn("failed to record upload progress", "uploadId", id, "error", err)
 			}
 			events.EmitUploadProgress(a.ctx, id, bytesSent, totalBytes)
@@ -589,7 +589,7 @@ func (a *App) UploadGetRecoverable() (*RecoverableUploadDTO, error) {
 			if u.SessionURI != nil {
 				sessionURI = *u.SessionURI
 			}
-			resume := drive.ResumeState{SessionURI: sessionURI, BytesSent: u.BytesSent, ContentHashState: u.ContentHashState}
+			resume := drive.ResumeState{SessionURI: sessionURI, BytesSent: u.BytesSent, ContentHashState: u.ContentHashState, ChunkSize: u.ChunkSizeBytes, ConsecutiveSuccesses: u.ConsecutiveChunkSuccesses}
 			a.startUpload(u.ID, client, u.LocalPath, u.DriveFolderID, u.LocalSizeBytes, baseline, resume)
 		}
 	}
@@ -610,7 +610,12 @@ func (a *App) UploadGetRecoverable() (*RecoverableUploadDTO, error) {
 
 // UploadConfirmRestart restarts an awaiting_confirmation upload from byte
 // 0 against a brand-new Drive session (FR-010). Only valid when the
-// upload's status is currently awaiting_confirmation.
+// upload's status is currently awaiting_confirmation. The restarted
+// transfer's first chunk uses the size the upload had earned before the
+// interruption, not the baseline -- ResetUploadForRestart deliberately
+// leaves chunk_size_bytes/consecutive_chunk_successes untouched, and this
+// applies the same way regardless of which awaiting_confirmation_reason
+// triggered the restart (spec Clarifications, research.md §5).
 func (a *App) UploadConfirmRestart(id int64) error {
 	if err := a.requireSignedIn(); err != nil {
 		return err
@@ -642,7 +647,8 @@ func (a *App) UploadConfirmRestart(id int64) error {
 		return err
 	}
 	baseline := drive.IdentityBaseline{Size: info.Size(), Mtime: info.ModTime()}
-	a.startUpload(id, client, u.LocalPath, u.DriveFolderID, info.Size(), baseline, drive.ResumeState{})
+	resume := drive.ResumeState{ChunkSize: u.ChunkSizeBytes, ConsecutiveSuccesses: u.ConsecutiveChunkSuccesses}
+	a.startUpload(id, client, u.LocalPath, u.DriveFolderID, info.Size(), baseline, resume)
 	return nil
 }
 
