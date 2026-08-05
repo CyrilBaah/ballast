@@ -29,6 +29,11 @@ const (
 const (
 	OpenIDScope        = "openid"
 	UserInfoEmailScope = "https://www.googleapis.com/auth/userinfo.email"
+	// UserInfoProfileScope adds Google's name/picture claims to the
+	// userinfo response (FR-011, research.md §7) -- a standard,
+	// low-sensitivity scope Google's consent screen already groups
+	// alongside userinfo.email.
+	UserInfoProfileScope = "https://www.googleapis.com/auth/userinfo.profile"
 )
 
 // DefaultUserInfoURL is Google's real userinfo endpoint. Tests and the
@@ -83,8 +88,10 @@ func ExchangeCode(ctx context.Context, cfg *oauth2.Config, code string, pkce PKC
 
 // UserInfo is the subset of Google's userinfo response this feature needs.
 type UserInfo struct {
-	Sub   string `json:"sub"`
-	Email string `json:"email"`
+	Sub     string `json:"sub"`
+	Email   string `json:"email"`
+	Name    string `json:"name"`
+	Picture string `json:"picture"`
 }
 
 // FetchUserInfo retrieves the signed-in user's stable account identifier
@@ -209,6 +216,8 @@ func randomState() (string, error) {
 type Session struct {
 	Cancelled    bool
 	Email        string
+	Name         string
+	Picture      string
 	GoogleUserID string
 	AccessToken  string
 	RefreshToken string
@@ -276,6 +285,8 @@ func SignIn(ctx context.Context, cfg *oauth2.Config, openBrowser BrowserOpener, 
 
 	return &Session{
 		Email:        info.Email,
+		Name:         info.Name,
+		Picture:      info.Picture,
 		GoogleUserID: info.Sub,
 		AccessToken:  tok.AccessToken,
 		RefreshToken: tok.RefreshToken,
