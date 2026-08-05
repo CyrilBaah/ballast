@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS upload (
 	session_uri TEXT,
 	content_hash_state BLOB,
 	awaiting_confirmation_reason TEXT CHECK (awaiting_confirmation_reason IN ('session_expired', 'file_changed') OR awaiting_confirmation_reason IS NULL),
+	chunk_size_bytes INTEGER NOT NULL DEFAULT 8388608,
+	consecutive_chunk_successes INTEGER NOT NULL DEFAULT 0,
 	drive_file_id TEXT,
 	drive_file_link TEXT,
 	failure_reason TEXT,
@@ -50,14 +52,46 @@ CREATE TABLE IF NOT EXISTS upload (
 const schema = schemaAccountTable + schemaUploadTable
 
 // ensureSchema creates the account/upload tables if they don't already
-// exist, then upgrades an existing pre-Feature-002 upload table in place.
-// Idempotent -- safe to call on every app launch.
+// exist, then upgrades an existing pre-Feature-002 or pre-Feature-003
+// upload table in place. Idempotent -- safe to call on every app launch.
 func (d *DB) ensureSchema() error {
 	if _, err := d.conn.Exec(schema); err != nil {
 		return fmt.Errorf("storage: create schema: %w", err)
 	}
 	if err := d.migrateUploadTableIfNeeded(); err != nil {
 		return err
+	}
+	if err := d.migrateChunkSizeColumnsIfNeeded(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// migrateChunkSizeColumnsIfNeeded upgrades a pre-existing upload table
+// (already at Feature 002's shape) that's missing this feature's
+// chunk_size_bytes/consecutive_chunk_successes columns, detected via
+// chunk_size_bytes's absence. Unlike migrateUploadTableIfNeeded, no CHECK
+// constraint needs widening here, so a plain ALTER TABLE ADD COLUMN
+// suffices -- no rename-recreate-copy dance required. A no-op once
+// chunk_size_bytes already exists (including immediately after
+// migrateUploadTableIfNeeded has just created it fresh via schemaUploadTable).
+func (d *DB) migrateChunkSizeColumnsIfNeeded() error {
+	hasColumn, err := d.uploadTableHasColumn("chunk_size_bytes")
+	if err != nil {
+		return err
+	}
+	if hasColumn {
+		return nil
+	}
+
+	stmts := []string{
+		`ALTER TABLE upload ADD COLUMN chunk_size_bytes INTEGER NOT NULL DEFAULT 8388608`,
+		`ALTER TABLE upload ADD COLUMN consecutive_chunk_successes INTEGER NOT NULL DEFAULT 0`,
+	}
+	for _, stmt := range stmts {
+		if _, err := d.conn.Exec(stmt); err != nil {
+			return fmt.Errorf("storage: migrate chunk-size columns: %w", err)
+		}
 	}
 	return nil
 }
