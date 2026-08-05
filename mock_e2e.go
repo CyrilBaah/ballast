@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -71,6 +72,11 @@ func newE2EMockServer() *httptest.Server {
 
 	var mu sync.Mutex
 	var session *e2eUploadSession
+	// srv is assigned once httptest.NewServer starts the listener below;
+	// handlers registered before that point (e.g. /userinfo, for the
+	// avatar URL it returns) only read it once a real request arrives,
+	// by which point srv is always already set.
+	var srv *httptest.Server
 
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
@@ -83,6 +89,20 @@ func newE2EMockServer() *httptest.Server {
 			})
 			return
 		}
+		// "signin-fail" simulates the code exchange itself failing (as
+		// opposed to "deny", which the user triggers by cancelling
+		// consent before any exchange happens) -- needed so Playwright
+		// can exercise a genuine sign-in error's state treatment (User
+		// Story 2) distinct from the no-error cancellation path.
+		if r.Form.Get("grant_type") != "refresh_token" && readE2EOutcome() == "signin-fail" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error":             "invalid_grant",
+				"error_description": "malformed authorization code",
+			})
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  "e2e-mock-access-token",
@@ -92,22 +112,76 @@ func newE2EMockServer() *httptest.Server {
 		})
 	})
 
+	// userinfo's name/picture fields vary by BALLAST_E2E_OUTCOME_FILE so
+	// Playwright can exercise the sidebar's account-identity fallbacks
+	// (User Story 1): "userinfo-name-only" omits the photo, "userinfo-neither"
+	// omits both, and anything else (including the default "approve")
+	// returns the full name+picture case.
 	mux.HandleFunc("/userinfo", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		info := map[string]any{
 			"sub":   "e2e-mock-user-id",
 			"email": "e2e-mock-user@example.com",
-		})
+		}
+		switch readE2EOutcome() {
+		case "userinfo-neither":
+			// no name, no picture
+		case "userinfo-name-only":
+			info["name"] = "E2E Mock User"
+		default:
+			info["name"] = "E2E Mock User"
+			info["picture"] = srv.URL + "/avatar.png"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(info)
+	})
+
+	mux.HandleFunc("/avatar.png", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(e2eOnePixelPNG)
 	})
 
 	mux.HandleFunc("/revoke", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Files.List always reports no existing folders, so tests always land on "My Drive".
+	// Files.List always reports no existing folders, so tests always land
+	// on "My Drive". "slow-list" and "500-list" (BALLAST_E2E_OUTCOME_FILE)
+	// let Playwright reliably trigger the picker's loading/error states
+	// (User Story 2) instead of racing real network timing.
 	mux.HandleFunc("/files", func(w http.ResponseWriter, r *http.Request) {
+		switch readE2EOutcome() {
+		case "500-list":
+			writeE2EDriveError(w, http.StatusInternalServerError, "backendError", "", "internal error listing folders")
+			return
+		case "slow-list":
+			time.Sleep(1500 * time.Millisecond)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"files": []map[string]string{}})
+	})
+
+	// about.get's storageQuota varies by BALLAST_E2E_OUTCOME_FILE so
+	// Playwright can exercise the sidebar's storage-usage fallbacks (User
+	// Story 1, spec.md FR-012): "quota-unlimited" omits `limit`, "quota-fail"
+	// simulates the call failing outright, and anything else (including the
+	// default "approve") returns a normal limited-storage account.
+	mux.HandleFunc("/about", func(w http.ResponseWriter, r *http.Request) {
+		switch readE2EOutcome() {
+		case "quota-fail":
+			writeE2EDriveError(w, http.StatusInternalServerError, "backendError", "", "failed to fetch storage quota")
+			return
+		case "quota-unlimited":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"storageQuota": map[string]any{"usage": "5368709120"},
+			})
+			return
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"storageQuota": map[string]any{"usage": "5368709120", "limit": "17179869184"},
+			})
+		}
 	})
 
 	mux.HandleFunc("/upload/drive/v3/files", func(w http.ResponseWriter, r *http.Request) {
@@ -254,8 +328,22 @@ func newE2EMockServer() *httptest.Server {
 		w.WriteHeader(resumeIncomplete)
 	})
 
-	return httptest.NewServer(mux)
+	srv = httptest.NewServer(mux)
+	return srv
 }
+
+// e2eOnePixelPNG is a minimal valid 1x1 transparent PNG, served at
+// /avatar.png so the sidebar's <img> for a mocked profile photo actually
+// loads successfully rather than firing its error/fallback path.
+var e2eOnePixelPNG = func() []byte {
+	data, err := base64.StdEncoding.DecodeString(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+	)
+	if err != nil {
+		panic(err)
+	}
+	return data
+}()
 
 // writeE2ESessionStatus must be called with the session's guarding mutex held.
 func writeE2ESessionStatus(w http.ResponseWriter, session *e2eUploadSession) {

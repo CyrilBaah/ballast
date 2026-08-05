@@ -17,7 +17,9 @@ CREATE TABLE IF NOT EXISTS account (
 	refresh_token_ciphertext BLOB NOT NULL,
 	refresh_token_nonce BLOB NOT NULL,
 	access_token_expiry DATETIME NOT NULL,
-	created_at DATETIME NOT NULL DEFAULT (STRFTIME('%Y-%m-%dT%H:%M:%fZ', 'now'))
+	created_at DATETIME NOT NULL DEFAULT (STRFTIME('%Y-%m-%dT%H:%M:%fZ', 'now')),
+	display_name TEXT,
+	picture_url TEXT
 );
 `
 
@@ -45,7 +47,8 @@ CREATE TABLE IF NOT EXISTS upload (
 	drive_file_link TEXT,
 	failure_reason TEXT,
 	started_at DATETIME NOT NULL DEFAULT (STRFTIME('%Y-%m-%dT%H:%M:%fZ', 'now')),
-	ended_at DATETIME
+	ended_at DATETIME,
+	drive_folder_name TEXT
 );
 `
 
@@ -63,6 +66,53 @@ func (d *DB) ensureSchema() error {
 	}
 	if err := d.migrateChunkSizeColumnsIfNeeded(); err != nil {
 		return err
+	}
+	if err := d.migrateDriveFolderNameColumnIfNeeded(); err != nil {
+		return err
+	}
+	if err := d.migrateAccountProfileColumnsIfNeeded(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// migrateDriveFolderNameColumnIfNeeded upgrades a pre-existing upload table
+// missing this feature's drive_folder_name column (data-model.md). A plain
+// ALTER TABLE ADD COLUMN suffices, same as migrateChunkSizeColumnsIfNeeded --
+// no CHECK constraint involved. A no-op once the column already exists.
+func (d *DB) migrateDriveFolderNameColumnIfNeeded() error {
+	hasColumn, err := d.uploadTableHasColumn("drive_folder_name")
+	if err != nil {
+		return err
+	}
+	if hasColumn {
+		return nil
+	}
+	if _, err := d.conn.Exec(`ALTER TABLE upload ADD COLUMN drive_folder_name TEXT`); err != nil {
+		return fmt.Errorf("storage: migrate drive_folder_name column: %w", err)
+	}
+	return nil
+}
+
+// migrateAccountProfileColumnsIfNeeded upgrades a pre-existing account table
+// missing this feature's display_name/picture_url columns (data-model.md).
+// A no-op once display_name already exists.
+func (d *DB) migrateAccountProfileColumnsIfNeeded() error {
+	hasColumn, err := d.accountTableHasColumn("display_name")
+	if err != nil {
+		return err
+	}
+	if hasColumn {
+		return nil
+	}
+	stmts := []string{
+		`ALTER TABLE account ADD COLUMN display_name TEXT`,
+		`ALTER TABLE account ADD COLUMN picture_url TEXT`,
+	}
+	for _, stmt := range stmts {
+		if _, err := d.conn.Exec(stmt); err != nil {
+			return fmt.Errorf("storage: migrate account profile columns: %w", err)
+		}
 	}
 	return nil
 }
@@ -140,9 +190,22 @@ func (d *DB) migrateUploadTableIfNeeded() error {
 // uploadTableHasColumn reports whether the upload table (as it currently
 // exists in the database) has a column with the given name.
 func (d *DB) uploadTableHasColumn(name string) (bool, error) {
-	rows, err := d.conn.Query(`PRAGMA table_info(upload)`)
+	return d.tableHasColumn("upload", name)
+}
+
+// accountTableHasColumn reports whether the account table (as it currently
+// exists in the database) has a column with the given name.
+func (d *DB) accountTableHasColumn(name string) (bool, error) {
+	return d.tableHasColumn("account", name)
+}
+
+// tableHasColumn reports whether table (as it currently exists in the
+// database) has a column with the given name. table is trusted, fixed
+// call-site input, never user data.
+func (d *DB) tableHasColumn(table, name string) (bool, error) {
+	rows, err := d.conn.Query(fmt.Sprintf(`PRAGMA table_info(%s)`, table))
 	if err != nil {
-		return false, fmt.Errorf("storage: inspect upload table: %w", err)
+		return false, fmt.Errorf("storage: inspect %s table: %w", table, err)
 	}
 	defer rows.Close()
 
@@ -151,7 +214,7 @@ func (d *DB) uploadTableHasColumn(name string) (bool, error) {
 		var colName, colType string
 		var dflt sql.NullString
 		if err := rows.Scan(&cid, &colName, &colType, &notNull, &dflt, &pk); err != nil {
-			return false, fmt.Errorf("storage: scan upload table_info: %w", err)
+			return false, fmt.Errorf("storage: scan %s table_info: %w", table, err)
 		}
 		if colName == name {
 			return true, nil

@@ -23,6 +23,12 @@ const (
 type AuthStatus struct {
 	SignedIn bool   `json:"signedIn"`
 	Email    string `json:"email,omitempty"`
+	// Name and PictureURL are Google's display name/profile photo (FR-011,
+	// research.md §7); either can be absent (older accounts, or Google
+	// simply not returning one) -- the sidebar falls back to Email and a
+	// generated-initials avatar in that case.
+	Name       string `json:"name,omitempty"`
+	PictureURL string `json:"pictureUrl,omitempty"`
 }
 
 // UploadProgressPayload mirrors the upload:progress event payload.

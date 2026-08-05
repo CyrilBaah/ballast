@@ -111,7 +111,7 @@ func (a *App) oauthConfig() *oauth2pkg.Config {
 	return &oauth2pkg.Config{
 		ClientID:     os.Getenv("BALLAST_GOOGLE_CLIENT_ID"),
 		ClientSecret: os.Getenv("BALLAST_GOOGLE_CLIENT_SECRET"),
-		Scopes:       []string{auth.OpenIDScope, auth.UserInfoEmailScope, auth.DriveFileScope, auth.DriveMetadataReadonlyScope},
+		Scopes:       []string{auth.OpenIDScope, auth.UserInfoEmailScope, auth.UserInfoProfileScope, auth.DriveFileScope, auth.DriveMetadataReadonlyScope},
 		Endpoint:     endpoint,
 	}
 }
@@ -142,7 +142,14 @@ func (a *App) AuthGetStatus() events.AuthStatus {
 		}
 	}
 
-	return events.AuthStatus{SignedIn: true, Email: acct.Email}
+	status := events.AuthStatus{SignedIn: true, Email: acct.Email}
+	if acct.DisplayName != nil {
+		status.Name = *acct.DisplayName
+	}
+	if acct.PictureURL != nil {
+		status.PictureURL = *acct.PictureURL
+	}
+	return status
 }
 
 // AuthSignIn starts the OAuth loopback flow.
@@ -167,7 +174,7 @@ func (a *App) AuthSignIn() (events.AuthStatus, error) {
 		return events.AuthStatus{}, err
 	}
 
-	status := events.AuthStatus{SignedIn: true, Email: session.Email}
+	status := events.AuthStatus{SignedIn: true, Email: session.Email, Name: session.Name, PictureURL: session.Picture}
 	events.EmitAuthChanged(a.ctx, status)
 	return status, nil
 }
@@ -223,7 +230,7 @@ func (a *App) persistSession(session *auth.Session) error {
 		return fmt.Errorf("auth: encrypt refresh token: %w", err)
 	}
 
-	return a.db.UpsertAccount(storage.Account{
+	acct := storage.Account{
 		GoogleUserID:           session.GoogleUserID,
 		Email:                  session.Email,
 		AccessTokenCiphertext:  accessCiphertext,
@@ -232,7 +239,14 @@ func (a *App) persistSession(session *auth.Session) error {
 		RefreshTokenNonce:      refreshNonce,
 		AccessTokenExpiry:      session.Expiry,
 		CreatedAt:              time.Now(),
-	})
+	}
+	if session.Name != "" {
+		acct.DisplayName = &session.Name
+	}
+	if session.Picture != "" {
+		acct.PictureURL = &session.Picture
+	}
+	return a.db.UpsertAccount(acct)
 }
 
 // silentlyRefresh refreshes an about-to-expire access token in place,
@@ -264,6 +278,15 @@ func (a *App) silentlyRefresh(acct *storage.Account) error {
 		AccessToken:  tok.AccessToken,
 		RefreshToken: newRefreshToken,
 		Expiry:       tok.Expiry,
+	}
+	// A silent refresh doesn't re-fetch userinfo -- carry the
+	// already-stored name/picture forward so persistSession doesn't wipe
+	// them (it only writes a field when the Session value is non-empty).
+	if acct.DisplayName != nil {
+		session.Name = *acct.DisplayName
+	}
+	if acct.PictureURL != nil {
+		session.Picture = *acct.PictureURL
 	}
 	return a.persistSession(session)
 }
@@ -306,6 +329,17 @@ func (a *App) DriveListFolders(parentId string) ([]drive.Folder, error) {
 		return nil, err
 	}
 	return drive.ListFolders(a.ctx, svc, parentId)
+}
+
+// DriveGetStorageQuota returns the signed-in account's Drive storage usage
+// (contracts/wails-bindings.md), fetched fresh via Drive's about.get and
+// held in memory for the session only -- never persisted (research.md §8).
+func (a *App) DriveGetStorageQuota() (drive.StorageQuota, error) {
+	svc, err := a.driveService(a.ctx)
+	if err != nil {
+		return drive.StorageQuota{}, err
+	}
+	return drive.GetStorageQuota(a.ctx, svc)
 }
 
 // driveService builds an authenticated Drive API client for the current
@@ -402,10 +436,63 @@ type RecoverableUploadDTO struct {
 	AwaitingConfirmationReason string `json:"awaitingConfirmationReason,omitempty"`
 }
 
+// UploadListItemDTO is one row of Upload.ListRecent's result
+// (contracts/wails-bindings.md), the new upload-history screen's data source.
+type UploadListItemDTO struct {
+	ID              int64  `json:"id"`
+	FileName        string `json:"fileName"`
+	DriveFolderName string `json:"driveFolderName"`
+	Status          string `json:"status"`
+	BytesSent       int64  `json:"bytesSent"`
+	TotalBytes      int64  `json:"totalBytes"`
+	DriveFileLink   string `json:"driveFileLink,omitempty"`
+	FailureReason   string `json:"failureReason,omitempty"`
+	StartedAt       string `json:"startedAt"`
+}
+
+// UploadListRecent returns up to 50 uploads, most recent first, for the
+// history screen's initial snapshot (data-model.md's ListRecentUploads,
+// contracts/wails-bindings.md). Read-only; the frontend keeps entries
+// current afterward by subscribing to the same upload:* events
+// progress.ts already consumes, not by re-calling this method.
+func (a *App) UploadListRecent() ([]UploadListItemDTO, error) {
+	if a.db == nil {
+		return nil, fmt.Errorf("upload: local database is unavailable")
+	}
+	uploads, err := a.db.ListRecentUploads()
+	if err != nil {
+		return nil, err
+	}
+	items := make([]UploadListItemDTO, 0, len(uploads))
+	for _, u := range uploads {
+		folderName := "My Drive"
+		if u.DriveFolderName != nil && *u.DriveFolderName != "" {
+			folderName = *u.DriveFolderName
+		}
+		item := UploadListItemDTO{
+			ID:              u.ID,
+			FileName:        filepath.Base(u.LocalPath),
+			DriveFolderName: folderName,
+			Status:          string(u.Status),
+			BytesSent:       u.BytesSent,
+			TotalBytes:      u.LocalSizeBytes,
+			StartedAt:       u.StartedAt.UTC().Format(time.RFC3339),
+		}
+		if u.DriveFileLink != nil {
+			item.DriveFileLink = *u.DriveFileLink
+		}
+		if u.FailureReason != nil {
+			item.FailureReason = *u.FailureReason
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
 // UploadStart verifies the local file still exists, creates an Upload row,
 // and kicks off the transfer in the background. Rejects up front (FR-013)
 // if another upload is already in_progress, paused, or awaiting_confirmation.
-func (a *App) UploadStart(localPath, driveFolderId string) (int64, error) {
+func (a *App) UploadStart(localPath, driveFolderId, driveFolderName string) (int64, error) {
 	if err := a.requireSignedIn(); err != nil {
 		return 0, err
 	}
@@ -423,7 +510,7 @@ func (a *App) UploadStart(localPath, driveFolderId string) (int64, error) {
 		return 0, err
 	}
 
-	u, err := a.db.CreateUpload(localPath, info.Size(), info.ModTime(), driveFolderId)
+	u, err := a.db.CreateUpload(localPath, info.Size(), info.ModTime(), driveFolderId, driveFolderName)
 	if err != nil {
 		return 0, fmt.Errorf("upload: create upload record: %w", err)
 	}

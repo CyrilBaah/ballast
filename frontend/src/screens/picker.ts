@@ -4,6 +4,7 @@ import { PickLocal, type LocalFileRef } from '../api/files';
 import { ListFolders, type DriveFolder } from '../api/drive';
 import { Start } from '../api/upload';
 import { SignOut } from '../api/auth';
+import { toPlainLanguage } from '../errors';
 
 export interface PickerScreenOptions {
     container: HTMLElement;
@@ -35,7 +36,7 @@ export function renderPicker(opts: PickerScreenOptions): () => void {
                 <p class="picker-account">Signed in as ${email ?? 'unknown'}.</p>
                 <button id="sign-out-btn" class="btn btn-secondary">Sign out</button>
             </div>
-            <p id="sign-out-error" class="signin-error" role="alert"></p>
+            <p id="sign-out-error" class="state-error" role="alert"></p>
 
             <section class="picker-file">
                 <button id="pick-file-btn" class="btn">Choose a file…</button>
@@ -44,12 +45,15 @@ export function renderPicker(opts: PickerScreenOptions): () => void {
 
             <section class="picker-folders">
                 <p id="picker-breadcrumb" class="picker-breadcrumb"></p>
+                <p id="picker-folder-loading" class="state-loading" role="status" aria-live="polite" hidden>
+                    <span class="spinner" aria-hidden="true"></span>Loading folders…
+                </p>
                 <ul id="picker-folder-list" class="picker-folder-list"></ul>
-                <p id="picker-folder-error" class="signin-error" role="alert"></p>
+                <p id="picker-folder-error" class="state-error" role="alert"></p>
             </section>
 
             <button id="upload-btn" class="btn" disabled>Upload</button>
-            <p id="upload-error" class="signin-error" role="alert"></p>
+            <p id="upload-error" class="state-error" role="alert"></p>
         </div>
     `;
 
@@ -58,6 +62,7 @@ export function renderPicker(opts: PickerScreenOptions): () => void {
     const pickFileBtn = container.querySelector<HTMLButtonElement>('#pick-file-btn')!;
     const pickedFileEl = container.querySelector<HTMLParagraphElement>('#picked-file')!;
     const breadcrumbEl = container.querySelector<HTMLParagraphElement>('#picker-breadcrumb')!;
+    const folderLoadingEl = container.querySelector<HTMLParagraphElement>('#picker-folder-loading')!;
     const folderListEl = container.querySelector<HTMLUListElement>('#picker-folder-list')!;
     const folderErrorEl = container.querySelector<HTMLParagraphElement>('#picker-folder-error')!;
     const uploadBtn = container.querySelector<HTMLButtonElement>('#upload-btn')!;
@@ -115,6 +120,8 @@ export function renderPicker(opts: PickerScreenOptions): () => void {
     async function loadFolders() {
         renderBreadcrumb();
         folderErrorEl.textContent = '';
+        folderLoadingEl.hidden = false;
+        folderListEl.innerHTML = '';
         try {
             folders = await ListFolders(currentFolder().id);
             if (disposed) return;
@@ -123,7 +130,10 @@ export function renderPicker(opts: PickerScreenOptions): () => void {
             if (disposed) return;
             folders = [];
             renderFolderList();
-            folderErrorEl.textContent = err instanceof Error ? err.message : String(err);
+            const message = err instanceof Error ? err.message : String(err);
+            folderErrorEl.textContent = toPlainLanguage(message);
+        } finally {
+            if (!disposed) folderLoadingEl.hidden = true;
         }
     }
 
@@ -137,7 +147,8 @@ export function renderPicker(opts: PickerScreenOptions): () => void {
         } catch (err) {
             if (disposed) return;
             signOutBtn.disabled = false;
-            signOutErrorEl.textContent = err instanceof Error ? err.message : String(err);
+            const message = err instanceof Error ? err.message : String(err);
+            signOutErrorEl.textContent = toPlainLanguage(message);
         }
     });
 
@@ -150,7 +161,8 @@ export function renderPicker(opts: PickerScreenOptions): () => void {
             updateUploadButton();
         } catch (err) {
             pickedFileEl.textContent = '';
-            uploadErrorEl.textContent = err instanceof Error ? err.message : String(err);
+            const message = err instanceof Error ? err.message : String(err);
+            uploadErrorEl.textContent = toPlainLanguage(message);
         }
     });
 
@@ -160,12 +172,13 @@ export function renderPicker(opts: PickerScreenOptions): () => void {
         starting = true;
         updateUploadButton();
         try {
-            const uploadId = await Start(selectedFile.path, currentFolder().id || 'root');
+            const uploadId = await Start(selectedFile.path, currentFolder().id || 'root', currentFolder().name);
             onUploadStarted(uploadId, selectedFile, currentFolder());
         } catch (err) {
             starting = false;
             updateUploadButton();
-            uploadErrorEl.textContent = err instanceof Error ? err.message : String(err);
+            const message = err instanceof Error ? err.message : String(err);
+            uploadErrorEl.textContent = toPlainLanguage(message);
         }
     });
 

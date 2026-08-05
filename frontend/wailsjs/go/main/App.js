@@ -18,6 +18,10 @@ export function DebugRestart() {
   return window['go']['main']['App']['DebugRestart']();
 }
 
+export function DriveGetStorageQuota() {
+  return window['go']['main']['App']['DriveGetStorageQuota']();
+}
+
 export function DriveListFolders(arg1) {
   return window['go']['main']['App']['DriveListFolders'](arg1);
 }
@@ -42,6 +46,10 @@ export function UploadGetStatus(arg1) {
   return window['go']['main']['App']['UploadGetStatus'](arg1);
 }
 
-export function UploadStart(arg1, arg2) {
-  return window['go']['main']['App']['UploadStart'](arg1, arg2);
+export function UploadListRecent() {
+  return window['go']['main']['App']['UploadListRecent']();
+}
+
+export function UploadStart(arg1, arg2, arg3) {
+  return window['go']['main']['App']['UploadStart'](arg1, arg2, arg3);
 }

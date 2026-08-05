@@ -21,7 +21,7 @@ var testMtime = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 func TestUploadStartsPendingThenMovesInProgress(t *testing.T) {
 	db := newTestDB(t)
 
-	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root")
+	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root", "Test Folder")
 	if err != nil {
 		t.Fatalf("CreateUpload: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestUploadStartsPendingThenMovesInProgress(t *testing.T) {
 
 func TestUploadProgressUpdatesBytesSentSessionURIAndHashState(t *testing.T) {
 	db := newTestDB(t)
-	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root")
+	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root", "Test Folder")
 	if err != nil {
 		t.Fatalf("CreateUpload: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestUploadProgressUpdatesBytesSentSessionURIAndHashState(t *testing.T) {
 
 func TestCreateUploadDefaultsToBaselineChunkSize(t *testing.T) {
 	db := newTestDB(t)
-	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root")
+	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root", "Test Folder")
 	if err != nil {
 		t.Fatalf("CreateUpload: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestCreateUploadDefaultsToBaselineChunkSize(t *testing.T) {
 
 func TestUploadSucceededRequiresFileIDAndLink(t *testing.T) {
 	db := newTestDB(t)
-	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root")
+	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root", "Test Folder")
 	if err != nil {
 		t.Fatalf("CreateUpload: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestUploadSucceededRequiresFileIDAndLink(t *testing.T) {
 
 func TestUploadFailedRequiresReason(t *testing.T) {
 	db := newTestDB(t)
-	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root")
+	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root", "Test Folder")
 	if err != nil {
 		t.Fatalf("CreateUpload: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestUploadFailedRequiresReason(t *testing.T) {
 func TestOnlyOneUploadInProgressAtATime(t *testing.T) {
 	db := newTestDB(t)
 
-	first, err := db.CreateUpload("/tmp/a.txt", 10, testMtime, "root")
+	first, err := db.CreateUpload("/tmp/a.txt", 10, testMtime, "root", "Test Folder")
 	if err != nil {
 		t.Fatalf("CreateUpload #1: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestOnlyOneUploadInProgressAtATime(t *testing.T) {
 		t.Fatalf("SetUploadInProgress #1: %v", err)
 	}
 
-	second, err := db.CreateUpload("/tmp/b.txt", 20, testMtime, "root")
+	second, err := db.CreateUpload("/tmp/b.txt", 20, testMtime, "root", "Test Folder")
 	if err != nil {
 		t.Fatalf("CreateUpload #2: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestOnlyOneUploadInProgressAtATime(t *testing.T) {
 func TestSingleActiveUploadSpansPausedAndAwaitingConfirmation(t *testing.T) {
 	db := newTestDB(t)
 
-	first, err := db.CreateUpload("/tmp/a.txt", 10, testMtime, "root")
+	first, err := db.CreateUpload("/tmp/a.txt", 10, testMtime, "root", "Test Folder")
 	if err != nil {
 		t.Fatalf("CreateUpload #1: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestSingleActiveUploadSpansPausedAndAwaitingConfirmation(t *testing.T) {
 		t.Fatalf("SetUploadPaused: %v", err)
 	}
 
-	second, err := db.CreateUpload("/tmp/b.txt", 20, testMtime, "root")
+	second, err := db.CreateUpload("/tmp/b.txt", 20, testMtime, "root", "Test Folder")
 	if err != nil {
 		t.Fatalf("CreateUpload #2: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestSingleActiveUploadSpansPausedAndAwaitingConfirmation(t *testing.T) {
 
 func TestSetUploadAwaitingConfirmationRejectsInvalidReason(t *testing.T) {
 	db := newTestDB(t)
-	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root")
+	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root", "Test Folder")
 	if err != nil {
 		t.Fatalf("CreateUpload: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestSetUploadAwaitingConfirmationRejectsInvalidReason(t *testing.T) {
 
 func TestResetUploadForRestartClearsSessionAndRefreshesBaseline(t *testing.T) {
 	db := newTestDB(t)
-	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root")
+	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root", "Test Folder")
 	if err != nil {
 		t.Fatalf("CreateUpload: %v", err)
 	}
@@ -280,7 +280,7 @@ func TestResetUploadForRestartPreservesChunkSizeState(t *testing.T) {
 	for _, reason := range []string{AwaitingConfirmationSessionExpired, AwaitingConfirmationFileChanged} {
 		t.Run(reason, func(t *testing.T) {
 			db := newTestDB(t)
-			u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root")
+			u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root", "Test Folder")
 			if err != nil {
 				t.Fatalf("CreateUpload: %v", err)
 			}
@@ -324,7 +324,7 @@ func TestResetUploadForRestartPreservesChunkSizeState(t *testing.T) {
 
 func TestResetUploadForRestartRejectsWhenNotAwaitingConfirmation(t *testing.T) {
 	db := newTestDB(t)
-	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root")
+	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root", "Test Folder")
 	if err != nil {
 		t.Fatalf("CreateUpload: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestResetUploadForRestartRejectsWhenNotAwaitingConfirmation(t *testing.T) {
 
 func TestSetUploadCancelledOnlyFromPausedOrAwaitingConfirmation(t *testing.T) {
 	db := newTestDB(t)
-	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root")
+	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root", "Test Folder")
 	if err != nil {
 		t.Fatalf("CreateUpload: %v", err)
 	}
@@ -366,7 +366,7 @@ func TestSetUploadCancelledOnlyFromPausedOrAwaitingConfirmation(t *testing.T) {
 	}
 
 	// A cancelled upload frees FR-013's single-active-upload slot.
-	second, err := db.CreateUpload("/tmp/b.txt", 20, testMtime, "root")
+	second, err := db.CreateUpload("/tmp/b.txt", 20, testMtime, "root", "Test Folder")
 	if err != nil {
 		t.Fatalf("CreateUpload #2: %v", err)
 	}
@@ -377,7 +377,7 @@ func TestSetUploadCancelledOnlyFromPausedOrAwaitingConfirmation(t *testing.T) {
 
 func TestGetRecoverableUploadNormalizesStaleInProgress(t *testing.T) {
 	db := newTestDB(t)
-	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root")
+	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root", "Test Folder")
 	if err != nil {
 		t.Fatalf("CreateUpload: %v", err)
 	}
@@ -428,7 +428,7 @@ func TestGetRecoverableUploadSurvivesProcessRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenAt (first process): %v", err)
 	}
-	u, err := db1.CreateUpload("/tmp/file.txt", 4096, testMtime, "root")
+	u, err := db1.CreateUpload("/tmp/file.txt", 4096, testMtime, "root", "Test Folder")
 	if err != nil {
 		t.Fatalf("CreateUpload: %v", err)
 	}
@@ -485,7 +485,7 @@ func TestGetRecoverableUploadReturnsNilWhenNoneOutstanding(t *testing.T) {
 		t.Fatalf("expected nil, got %+v", got)
 	}
 
-	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root")
+	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root", "Test Folder")
 	if err != nil {
 		t.Fatalf("CreateUpload: %v", err)
 	}
@@ -498,5 +498,107 @@ func TestGetRecoverableUploadReturnsNilWhenNoneOutstanding(t *testing.T) {
 	}
 	if got != nil {
 		t.Fatalf("expected nil for a succeeded upload, got %+v", got)
+	}
+}
+
+// TestListRecentUploadsOrdersByStartedAtDescending covers data-model.md's
+// ListRecentUploads ordering guarantee (most recent first).
+func TestListRecentUploadsOrdersByStartedAtDescending(t *testing.T) {
+	db := newTestDB(t)
+
+	first, err := db.CreateUpload("/tmp/a.txt", 10, testMtime, "root", "My Drive")
+	if err != nil {
+		t.Fatalf("CreateUpload first: %v", err)
+	}
+	second, err := db.CreateUpload("/tmp/b.txt", 20, testMtime, "root", "My Drive")
+	if err != nil {
+		t.Fatalf("CreateUpload second: %v", err)
+	}
+	third, err := db.CreateUpload("/tmp/c.txt", 30, testMtime, "root", "My Drive")
+	if err != nil {
+		t.Fatalf("CreateUpload third: %v", err)
+	}
+
+	got, err := db.ListRecentUploads()
+	if err != nil {
+		t.Fatalf("ListRecentUploads: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("len(got) = %d, want 3", len(got))
+	}
+	wantOrder := []int64{third.ID, second.ID, first.ID}
+	for i, want := range wantOrder {
+		if got[i].ID != want {
+			t.Fatalf("got[%d].ID = %d, want %d (most-recent-first order)", i, got[i].ID, want)
+		}
+	}
+}
+
+// TestListRecentUploadsCapsAtFiftyRows covers data-model.md's fixed
+// 50-row limit (not user-configurable or paginated in this feature's scope).
+func TestListRecentUploadsCapsAtFiftyRows(t *testing.T) {
+	db := newTestDB(t)
+
+	const total = 55
+	for i := 0; i < total; i++ {
+		if _, err := db.CreateUpload("/tmp/many.txt", 10, testMtime, "root", "My Drive"); err != nil {
+			t.Fatalf("CreateUpload #%d: %v", i, err)
+		}
+	}
+
+	got, err := db.ListRecentUploads()
+	if err != nil {
+		t.Fatalf("ListRecentUploads: %v", err)
+	}
+	if len(got) != recentUploadsLimit {
+		t.Fatalf("len(got) = %d, want %d", len(got), recentUploadsLimit)
+	}
+}
+
+// TestListRecentUploadsDriveFolderNameFallback covers data-model.md's
+// UploadListItemDTO note: a null drive_folder_name -- the shape of a row
+// created before this migration ran, simulated here with a direct insert
+// since CreateUpload always populates the column going forward -- must
+// round-trip as nil from ListRecentUploads, not a defaulted string. The
+// "My Drive" text fallback itself is applied once, at the DTO boundary
+// that owns display formatting (app.go's UploadListRecent), not here.
+func TestListRecentUploadsDriveFolderNameFallback(t *testing.T) {
+	db := newTestDB(t)
+
+	withName, err := db.CreateUpload("/tmp/a.txt", 10, testMtime, "root", "Team Docs")
+	if err != nil {
+		t.Fatalf("CreateUpload withName: %v", err)
+	}
+
+	res, err := db.conn.Exec(`
+		INSERT INTO upload (local_path, local_size_bytes, local_mtime, drive_folder_id, status, bytes_sent, started_at)
+		VALUES (?, ?, ?, ?, ?, 0, ?)
+	`, "/tmp/pre-migration.txt", 20, formatTime(testMtime), "root", string(UploadPending), formatTime(testMtime))
+	if err != nil {
+		t.Fatalf("insert pre-migration-shape row: %v", err)
+	}
+	preMigrationID, err := res.LastInsertId()
+	if err != nil {
+		t.Fatalf("LastInsertId: %v", err)
+	}
+
+	got, err := db.ListRecentUploads()
+	if err != nil {
+		t.Fatalf("ListRecentUploads: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2", len(got))
+	}
+
+	byID := map[int64]*Upload{got[0].ID: got[0], got[1].ID: got[1]}
+
+	named := byID[withName.ID]
+	if named.DriveFolderName == nil || *named.DriveFolderName != "Team Docs" {
+		t.Fatalf("named.DriveFolderName = %v, want \"Team Docs\"", named.DriveFolderName)
+	}
+
+	preMigration := byID[preMigrationID]
+	if preMigration.DriveFolderName != nil {
+		t.Fatalf("preMigration.DriveFolderName = %v, want nil", *preMigration.DriveFolderName)
 	}
 }

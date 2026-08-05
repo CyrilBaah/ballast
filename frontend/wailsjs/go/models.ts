@@ -16,6 +16,20 @@ export namespace drive {
 	        this.hasChildren = source["hasChildren"];
 	    }
 	}
+	export class StorageQuota {
+	    usageBytes: number;
+	    limitBytes?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new StorageQuota(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.usageBytes = source["usageBytes"];
+	        this.limitBytes = source["limitBytes"];
+	    }
+	}
 
 }
 
@@ -24,6 +38,8 @@ export namespace events {
 	export class AuthStatus {
 	    signedIn: boolean;
 	    email?: string;
+	    name?: string;
+	    pictureUrl?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AuthStatus(source);
@@ -33,6 +49,8 @@ export namespace events {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.signedIn = source["signedIn"];
 	        this.email = source["email"];
+	        this.name = source["name"];
+	        this.pictureUrl = source["pictureUrl"];
 	    }
 	}
 
@@ -78,6 +96,34 @@ export namespace main {
 	        this.bytesSent = source["bytesSent"];
 	        this.totalBytes = source["totalBytes"];
 	        this.awaitingConfirmationReason = source["awaitingConfirmationReason"];
+	    }
+	}
+	export class UploadListItemDTO {
+	    id: number;
+	    fileName: string;
+	    driveFolderName: string;
+	    status: string;
+	    bytesSent: number;
+	    totalBytes: number;
+	    driveFileLink?: string;
+	    failureReason?: string;
+	    startedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new UploadListItemDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.fileName = source["fileName"];
+	        this.driveFolderName = source["driveFolderName"];
+	        this.status = source["status"];
+	        this.bytesSent = source["bytesSent"];
+	        this.totalBytes = source["totalBytes"];
+	        this.driveFileLink = source["driveFileLink"];
+	        this.failureReason = source["failureReason"];
+	        this.startedAt = source["startedAt"];
 	    }
 	}
 	export class UploadStatusDTO {
