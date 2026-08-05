@@ -54,7 +54,13 @@ type Upload struct {
 	FailureReason              *string
 	StartedAt                  time.Time
 	EndedAt                    *time.Time
+	DriveFolderName            *string
 }
+
+// recentUploadsLimit caps ListRecentUploads at a reasonable default for
+// "recent" (spec.md's Assumptions) -- not user-configurable or paginated
+// in this feature's scope (data-model.md).
+const recentUploadsLimit = 50
 
 // ErrUploadNotFound is returned when no Upload row exists with the given ID.
 var ErrUploadNotFound = errors.New("storage: upload not found")
@@ -74,13 +80,16 @@ var ErrUploadNotCancellable = errors.New("storage: upload is not in a cancellabl
 
 // CreateUpload inserts a new Upload row in the pending state, capturing
 // localMtime alongside localSizeBytes as the source-file-identity check's
-// cheap-check baseline (data-model.md, research.md §5).
-func (d *DB) CreateUpload(localPath string, localSizeBytes int64, localMtime time.Time, driveFolderID string) (*Upload, error) {
+// cheap-check baseline (data-model.md, research.md §5). driveFolderName is
+// the destination folder's display name, captured from the picker's
+// breadcrumb state purely as a label for the history list (FR-008,
+// research.md §3) -- it has no effect on upload behavior.
+func (d *DB) CreateUpload(localPath string, localSizeBytes int64, localMtime time.Time, driveFolderID string, driveFolderName string) (*Upload, error) {
 	now := time.Now()
 	res, err := d.conn.Exec(`
-		INSERT INTO upload (local_path, local_size_bytes, local_mtime, drive_folder_id, status, bytes_sent, started_at)
-		VALUES (?, ?, ?, ?, ?, 0, ?)
-	`, localPath, localSizeBytes, formatTime(localMtime), driveFolderID, string(UploadPending), formatTime(now))
+		INSERT INTO upload (local_path, local_size_bytes, local_mtime, drive_folder_id, status, bytes_sent, started_at, drive_folder_name)
+		VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+	`, localPath, localSizeBytes, formatTime(localMtime), driveFolderID, string(UploadPending), formatTime(now), driveFolderName)
 	if err != nil {
 		return nil, fmt.Errorf("storage: create upload: %w", err)
 	}
@@ -89,14 +98,15 @@ func (d *DB) CreateUpload(localPath string, localSizeBytes int64, localMtime tim
 		return nil, fmt.Errorf("storage: get new upload id: %w", err)
 	}
 	return &Upload{
-		ID:             id,
-		LocalPath:      localPath,
-		LocalSizeBytes: localSizeBytes,
-		LocalMtime:     localMtime,
-		DriveFolderID:  driveFolderID,
-		Status:         UploadPending,
-		ChunkSizeBytes: baselineChunkSizeBytes,
-		StartedAt:      now,
+		ID:              id,
+		LocalPath:       localPath,
+		LocalSizeBytes:  localSizeBytes,
+		LocalMtime:      localMtime,
+		DriveFolderID:   driveFolderID,
+		Status:          UploadPending,
+		ChunkSizeBytes:  baselineChunkSizeBytes,
+		StartedAt:       now,
+		DriveFolderName: &driveFolderName,
 	}, nil
 }
 
@@ -370,6 +380,83 @@ func (d *DB) GetUpload(id int64) (*Upload, error) {
 		u.FailureReason = &failureReason.String
 	}
 	return &u, nil
+}
+
+// ListRecentUploads returns Upload rows ordered by started_at DESC, capped
+// at recentUploadsLimit (data-model.md) -- used only by the Upload.ListRecent
+// binding (contracts/wails-bindings.md), for the new upload-history screen.
+func (d *DB) ListRecentUploads() ([]*Upload, error) {
+	rows, err := d.conn.Query(`
+		SELECT id, local_path, local_size_bytes, local_mtime, drive_folder_id, status, bytes_sent,
+			session_uri, content_hash_state, awaiting_confirmation_reason,
+			chunk_size_bytes, consecutive_chunk_successes,
+			drive_file_id, drive_file_link, failure_reason, started_at, ended_at, drive_folder_name
+		FROM upload ORDER BY started_at DESC LIMIT ?
+	`, recentUploadsLimit)
+	if err != nil {
+		return nil, fmt.Errorf("storage: list recent uploads: %w", err)
+	}
+	defer rows.Close()
+
+	var uploads []*Upload
+	for rows.Next() {
+		var u Upload
+		var status string
+		var localMtime, startedAt string
+		var sessionURI, awaitingReason, driveFileID, driveFileLink, failureReason, driveFolderName sql.NullString
+		var contentHashState []byte
+		var endedAt sql.NullString
+		if err := rows.Scan(
+			&u.ID, &u.LocalPath, &u.LocalSizeBytes, &localMtime, &u.DriveFolderID, &status, &u.BytesSent,
+			&sessionURI, &contentHashState, &awaitingReason,
+			&u.ChunkSizeBytes, &u.ConsecutiveChunkSuccesses,
+			&driveFileID, &driveFileLink, &failureReason, &startedAt, &endedAt, &driveFolderName,
+		); err != nil {
+			return nil, fmt.Errorf("storage: scan recent upload: %w", err)
+		}
+		u.Status = UploadState(status)
+		u.LocalMtime, err = parseTime(localMtime)
+		if err != nil {
+			return nil, fmt.Errorf("storage: parse local_mtime: %w", err)
+		}
+		u.StartedAt, err = parseTime(startedAt)
+		if err != nil {
+			return nil, fmt.Errorf("storage: parse started_at: %w", err)
+		}
+		if endedAt.Valid {
+			t, err := parseTime(endedAt.String)
+			if err != nil {
+				return nil, fmt.Errorf("storage: parse ended_at: %w", err)
+			}
+			u.EndedAt = &t
+		}
+		if sessionURI.Valid {
+			u.SessionURI = &sessionURI.String
+		}
+		if len(contentHashState) > 0 {
+			u.ContentHashState = contentHashState
+		}
+		if awaitingReason.Valid {
+			u.AwaitingConfirmationReason = &awaitingReason.String
+		}
+		if driveFileID.Valid {
+			u.DriveFileID = &driveFileID.String
+		}
+		if driveFileLink.Valid {
+			u.DriveFileLink = &driveFileLink.String
+		}
+		if failureReason.Valid {
+			u.FailureReason = &failureReason.String
+		}
+		if driveFolderName.Valid {
+			u.DriveFolderName = &driveFolderName.String
+		}
+		uploads = append(uploads, &u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("storage: iterate recent uploads: %w", err)
+	}
+	return uploads, nil
 }
 
 func requireRowsAffected(res sql.Result) error {

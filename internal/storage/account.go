@@ -17,6 +17,8 @@ var ErrNoAccount = errors.New("storage: no account is signed in")
 type Account struct {
 	GoogleUserID           string
 	Email                  string
+	DisplayName            *string
+	PictureURL             *string
 	AccessTokenCiphertext  []byte
 	AccessTokenNonce       []byte
 	RefreshTokenCiphertext []byte
@@ -29,21 +31,23 @@ type Account struct {
 func (d *DB) UpsertAccount(a Account) error {
 	_, err := d.conn.Exec(`
 		INSERT INTO account (
-			id, google_user_id, email,
+			id, google_user_id, email, display_name, picture_url,
 			access_token_ciphertext, access_token_nonce,
 			refresh_token_ciphertext, refresh_token_nonce,
 			access_token_expiry, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			google_user_id = excluded.google_user_id,
 			email = excluded.email,
+			display_name = excluded.display_name,
+			picture_url = excluded.picture_url,
 			access_token_ciphertext = excluded.access_token_ciphertext,
 			access_token_nonce = excluded.access_token_nonce,
 			refresh_token_ciphertext = excluded.refresh_token_ciphertext,
 			refresh_token_nonce = excluded.refresh_token_nonce,
 			access_token_expiry = excluded.access_token_expiry
 	`,
-		singleAccountID, a.GoogleUserID, a.Email,
+		singleAccountID, a.GoogleUserID, a.Email, a.DisplayName, a.PictureURL,
 		a.AccessTokenCiphertext, a.AccessTokenNonce,
 		a.RefreshTokenCiphertext, a.RefreshTokenNonce,
 		formatTime(a.AccessTokenExpiry), formatTime(a.CreatedAt),
@@ -58,7 +62,7 @@ func (d *DB) UpsertAccount(a Account) error {
 // signed out.
 func (d *DB) GetAccount() (*Account, error) {
 	row := d.conn.QueryRow(`
-		SELECT google_user_id, email,
+		SELECT google_user_id, email, display_name, picture_url,
 			access_token_ciphertext, access_token_nonce,
 			refresh_token_ciphertext, refresh_token_nonce,
 			access_token_expiry, created_at
@@ -67,8 +71,9 @@ func (d *DB) GetAccount() (*Account, error) {
 
 	var a Account
 	var expiry, created string
+	var displayName, pictureURL sql.NullString
 	err := row.Scan(
-		&a.GoogleUserID, &a.Email,
+		&a.GoogleUserID, &a.Email, &displayName, &pictureURL,
 		&a.AccessTokenCiphertext, &a.AccessTokenNonce,
 		&a.RefreshTokenCiphertext, &a.RefreshTokenNonce,
 		&expiry, &created,
@@ -78,6 +83,12 @@ func (d *DB) GetAccount() (*Account, error) {
 	}
 	if err != nil {
 		return nil, fmt.Errorf("storage: get account: %w", err)
+	}
+	if displayName.Valid {
+		a.DisplayName = &displayName.String
+	}
+	if pictureURL.Valid {
+		a.PictureURL = &pictureURL.String
 	}
 	a.AccessTokenExpiry, err = parseTime(expiry)
 	if err != nil {
