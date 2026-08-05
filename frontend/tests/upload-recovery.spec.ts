@@ -79,7 +79,11 @@ test('an upload interrupted by a process restart is detected and resumes from it
 }) => {
   await signIn(page);
 
-  const file = makeTempFile('recover-me.txt', 20_000);
+  // Larger than one baseline (8 MiB) chunk, so there's a real first chunk
+  // to succeed before the second one is failed -- 'network-fail-after-progress'
+  // (mock_e2e.go) fails deterministically only once some progress exists,
+  // rather than racing setOutcome() against how fast a single tiny request completes.
+  const file = makeTempFile('recover-me.txt', 12 * 1024 * 1024);
   await stubFilePicker(page, file);
   await page.click('#pick-file-btn');
   await page.click('#upload-btn');
@@ -94,7 +98,7 @@ test('an upload interrupted by a process restart is detected and resumes from it
 
   // Pause it mid-transfer so there's a persisted session_uri/bytes_sent
   // checkpoint before the simulated crash (quickstart.md Scenario 2 setup).
-  setOutcome('network-fail');
+  setOutcome('network-fail-after-progress');
   await expect.poll(() => getStatus(page, uploadId!).then((s) => s.status), { timeout: 15_000 }).toBe('paused');
   const beforeRestart = await getStatus(page, uploadId!);
   expect(beforeRestart.bytesSent).toBeGreaterThan(0);

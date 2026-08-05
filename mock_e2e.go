@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	oauth2pkg "golang.org/x/oauth2"
 )
@@ -135,7 +136,21 @@ func newE2EMockServer() *httptest.Server {
 			return
 		}
 
+		// E2E test files are only a few KB -- far smaller than a real chunk
+		// -- so a whole upload is exactly one request. Without a deliberate
+		// pause here, that single request can complete (under whatever
+		// outcome was already active) before Playwright's own setOutcome()
+		// write lands, racing the test rather than exercising it. This delay
+		// gives that fs write a reliable window on every request, regardless
+		// of file size or CI runner speed.
+		time.Sleep(150 * time.Millisecond)
+
 		outcome := readE2EOutcome()
+
+		mu.Lock()
+		hasProgress := session != nil && session.received > 0
+		mu.Unlock()
+
 		switch outcome {
 		case "network-fail":
 			hj, ok := w.(http.Hijacker)
@@ -148,6 +163,26 @@ func newE2EMockServer() *httptest.Server {
 				conn.Close()
 			}
 			return
+		case "network-fail-after-progress":
+			// Deterministic (not timing-based) version of "network-fail":
+			// only fails a request once at least one prior chunk has
+			// already been accepted, letting a test reliably pause an
+			// upload with a nonzero checkpoint -- e.g. to prove recovery
+			// resumes from that checkpoint rather than from 0 -- without
+			// racing setOutcome() against how fast the single request
+			// completes. Requests before any progress succeed normally.
+			if hasProgress {
+				hj, ok := w.(http.Hijacker)
+				if !ok {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
+				conn, _, err := hj.Hijack()
+				if err == nil {
+					conn.Close()
+				}
+				return
+			}
 		case "429":
 			writeE2EDriveError(w, http.StatusTooManyRequests, "rateLimitExceeded", "", "rate limit exceeded")
 			return

@@ -25,6 +25,32 @@ type fakeResumableServer struct {
 	// whether it was ultimately acknowledged -- lets a test assert "zero
 	// re-transmission" by checking this never exceeds the unsent remainder.
 	wireBytes int64
+	// chunkSizes records the byte length of every chunk PUT this server
+	// accepted (in send order), letting a test assert the exact
+	// growth/shrink sequence chunk-size adaptation produced (research.md §6).
+	chunkSizes []int64
+	// failOnAttempt, if non-nil, names 0-indexed chunk-PUT attempt numbers
+	// (counting every attempt, including ones that fail -- not just
+	// accepted ones) to fail with a simulated dropped connection,
+	// independent of and evaluated before the sticky outcome switch. This
+	// gives chunk-size adaptation tests an exact, race-free way to fail a
+	// specific attempt, unlike toggling setOutcome from a separate
+	// goroutine racing against however fast retries happen to run.
+	failOnAttempt map[int]bool
+	chunkAttempts int
+}
+
+// failAttempts arranges for the given 0-indexed chunk-PUT attempt numbers
+// to each fail once with a simulated dropped connection, deterministically
+// by attempt count rather than by timing.
+func (s *fakeResumableServer) failAttempts(indices ...int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := make(map[int]bool, len(indices))
+	for _, i := range indices {
+		m[i] = true
+	}
+	s.failOnAttempt = m
 }
 
 type fakeSession struct {
@@ -88,6 +114,16 @@ func (s *fakeResumableServer) totalWireBytes() int64 {
 	return s.wireBytes
 }
 
+// acceptedChunkSizes returns the byte length of every chunk PUT this
+// server has accepted so far, in send order.
+func (s *fakeResumableServer) acceptedChunkSizes() []int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]int64, len(s.chunkSizes))
+	copy(out, s.chunkSizes)
+	return out
+}
+
 func writeDriveError(w http.ResponseWriter, status int, reason, location, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -124,6 +160,30 @@ func (s *fakeResumableServer) handleInitiate(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *fakeResumableServer) handleSession(w http.ResponseWriter, r *http.Request) {
+	contentRange := r.Header.Get("Content-Range")
+	isOffsetQuery := strings.HasPrefix(contentRange, "bytes */")
+
+	if !isOffsetQuery {
+		s.mu.Lock()
+		idx := s.chunkAttempts
+		s.chunkAttempts++
+		shouldFail := s.failOnAttempt[idx]
+		s.mu.Unlock()
+
+		if shouldFail {
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			conn, _, err := hj.Hijack()
+			if err == nil {
+				conn.Close()
+			}
+			return
+		}
+	}
+
 	s.mu.Lock()
 	outcome := s.outcome
 	s.mu.Unlock()
@@ -156,9 +216,6 @@ func (s *fakeResumableServer) handleSession(w http.ResponseWriter, r *http.Reque
 		writeDriveError(w, http.StatusGone, "gone", "", "session gone")
 		return
 	}
-
-	contentRange := r.Header.Get("Content-Range")
-	isOffsetQuery := strings.HasPrefix(contentRange, "bytes */")
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -196,6 +253,7 @@ func (s *fakeResumableServer) handleSession(w http.ResponseWriter, r *http.Reque
 	s.session.content = append(s.session.content, body...)
 	s.session.received = end + 1
 	s.session.total = total
+	s.chunkSizes = append(s.chunkSizes, int64(n))
 
 	if s.session.received >= total {
 		w.Header().Set("Content-Type", "application/json")

@@ -54,7 +54,7 @@ func TestUploadProgressUpdatesBytesSentSessionURIAndHashState(t *testing.T) {
 		t.Fatalf("SetUploadInProgress: %v", err)
 	}
 	hashState := []byte{1, 2, 3}
-	if err := db.UpdateUploadProgress(u.ID, 512, "https://example.test/session/abc", hashState); err != nil {
+	if err := db.UpdateUploadProgress(u.ID, 512, "https://example.test/session/abc", hashState, 16*1024*1024, 1); err != nil {
 		t.Fatalf("UpdateUploadProgress: %v", err)
 	}
 	got, err := db.GetUpload(u.ID)
@@ -69,6 +69,34 @@ func TestUploadProgressUpdatesBytesSentSessionURIAndHashState(t *testing.T) {
 	}
 	if string(got.ContentHashState) != string(hashState) {
 		t.Fatalf("ContentHashState = %v, want %v", got.ContentHashState, hashState)
+	}
+	if got.ChunkSizeBytes != 16*1024*1024 {
+		t.Fatalf("ChunkSizeBytes = %d, want %d", got.ChunkSizeBytes, 16*1024*1024)
+	}
+	if got.ConsecutiveChunkSuccesses != 1 {
+		t.Fatalf("ConsecutiveChunkSuccesses = %d, want 1", got.ConsecutiveChunkSuccesses)
+	}
+}
+
+func TestCreateUploadDefaultsToBaselineChunkSize(t *testing.T) {
+	db := newTestDB(t)
+	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root")
+	if err != nil {
+		t.Fatalf("CreateUpload: %v", err)
+	}
+	if u.ChunkSizeBytes != baselineChunkSizeBytes {
+		t.Fatalf("ChunkSizeBytes = %d, want baseline %d", u.ChunkSizeBytes, baselineChunkSizeBytes)
+	}
+	if u.ConsecutiveChunkSuccesses != 0 {
+		t.Fatalf("ConsecutiveChunkSuccesses = %d, want 0", u.ConsecutiveChunkSuccesses)
+	}
+
+	got, err := db.GetUpload(u.ID)
+	if err != nil {
+		t.Fatalf("GetUpload: %v", err)
+	}
+	if got.ChunkSizeBytes != baselineChunkSizeBytes {
+		t.Fatalf("persisted ChunkSizeBytes = %d, want baseline %d", got.ChunkSizeBytes, baselineChunkSizeBytes)
 	}
 }
 
@@ -207,7 +235,7 @@ func TestResetUploadForRestartClearsSessionAndRefreshesBaseline(t *testing.T) {
 		t.Fatalf("CreateUpload: %v", err)
 	}
 	_ = db.SetUploadInProgress(u.ID)
-	_ = db.UpdateUploadProgress(u.ID, 512, "https://example.test/session/abc", []byte{9, 9})
+	_ = db.UpdateUploadProgress(u.ID, 512, "https://example.test/session/abc", []byte{9, 9}, 16*1024*1024, 1)
 	if err := db.SetUploadAwaitingConfirmation(u.ID, AwaitingConfirmationFileChanged); err != nil {
 		t.Fatalf("SetUploadAwaitingConfirmation: %v", err)
 	}
@@ -241,6 +269,56 @@ func TestResetUploadForRestartClearsSessionAndRefreshesBaseline(t *testing.T) {
 	}
 	if !got.LocalMtime.Equal(newMtime) {
 		t.Fatalf("LocalMtime = %v, want %v", got.LocalMtime, newMtime)
+	}
+}
+
+// TestResetUploadForRestartPreservesChunkSizeState covers User Story 3
+// (FR-009, research.md §5): a byte-0 restart clears the session/offset/
+// hash checkpoint but must leave the earned chunk-size state untouched,
+// regardless of which awaiting_confirmation reason triggered it.
+func TestResetUploadForRestartPreservesChunkSizeState(t *testing.T) {
+	for _, reason := range []string{AwaitingConfirmationSessionExpired, AwaitingConfirmationFileChanged} {
+		t.Run(reason, func(t *testing.T) {
+			db := newTestDB(t)
+			u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root")
+			if err != nil {
+				t.Fatalf("CreateUpload: %v", err)
+			}
+			_ = db.SetUploadInProgress(u.ID)
+			if err := db.UpdateUploadProgress(u.ID, 512, "https://example.test/session/abc", []byte{9, 9}, 32*1024*1024, 2); err != nil {
+				t.Fatalf("UpdateUploadProgress: %v", err)
+			}
+			if err := db.SetUploadAwaitingConfirmation(u.ID, reason); err != nil {
+				t.Fatalf("SetUploadAwaitingConfirmation: %v", err)
+			}
+
+			if err := db.ResetUploadForRestart(u.ID, 2048, testMtime.Add(time.Hour)); err != nil {
+				t.Fatalf("ResetUploadForRestart: %v", err)
+			}
+
+			got, err := db.GetUpload(u.ID)
+			if err != nil {
+				t.Fatalf("GetUpload: %v", err)
+			}
+			if got.BytesSent != 0 {
+				t.Fatalf("BytesSent = %d, want reset to 0", got.BytesSent)
+			}
+			if got.SessionURI != nil {
+				t.Fatalf("SessionURI = %v, want reset to nil", got.SessionURI)
+			}
+			if got.ContentHashState != nil {
+				t.Fatalf("ContentHashState = %v, want reset to nil", got.ContentHashState)
+			}
+			if got.AwaitingConfirmationReason != nil {
+				t.Fatalf("AwaitingConfirmationReason = %v, want reset to nil", got.AwaitingConfirmationReason)
+			}
+			if got.ChunkSizeBytes != 32*1024*1024 {
+				t.Fatalf("ChunkSizeBytes = %d, want preserved at %d, not reset to baseline", got.ChunkSizeBytes, 32*1024*1024)
+			}
+			if got.ConsecutiveChunkSuccesses != 2 {
+				t.Fatalf("ConsecutiveChunkSuccesses = %d, want preserved at 2", got.ConsecutiveChunkSuccesses)
+			}
+		})
 	}
 }
 
@@ -306,7 +384,7 @@ func TestGetRecoverableUploadNormalizesStaleInProgress(t *testing.T) {
 	if err := db.SetUploadInProgress(u.ID); err != nil {
 		t.Fatalf("SetUploadInProgress: %v", err)
 	}
-	_ = db.UpdateUploadProgress(u.ID, 256, "https://example.test/session/abc", []byte{1})
+	_ = db.UpdateUploadProgress(u.ID, 256, "https://example.test/session/abc", []byte{1}, 8*1024*1024, 2)
 
 	// Simulates a process restart against the same DB file: the row is
 	// still in_progress since the process died before persisting a paused
@@ -358,7 +436,7 @@ func TestGetRecoverableUploadSurvivesProcessRestart(t *testing.T) {
 		t.Fatalf("SetUploadInProgress: %v", err)
 	}
 	hashState := []byte{5, 6, 7, 8}
-	if err := db1.UpdateUploadProgress(u.ID, 2048, "https://example.test/session/xyz", hashState); err != nil {
+	if err := db1.UpdateUploadProgress(u.ID, 2048, "https://example.test/session/xyz", hashState, 32*1024*1024, 2); err != nil {
 		t.Fatalf("UpdateUploadProgress: %v", err)
 	}
 	// The process dies before it can persist a paused transition -- close
