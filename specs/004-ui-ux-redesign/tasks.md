@@ -48,13 +48,13 @@ the picker's loading/error states and the account-identity/storage-quota
 variants in Playwright — no new production dependencies are introduced
 (plan.md's Technical Context: no new framework/library).
 
-- [ ] T001 [P] Extend `mock_e2e.go`'s `/files` (Drive folder listing)
+- [X] T001 [P] Extend `mock_e2e.go`'s `/files` (Drive folder listing)
   handler with two new outcomes read via the existing
   `BALLAST_E2E_OUTCOME_FILE` mechanism: `slow-list` (artificial delay
   before responding, to make the loading state observable) and
   `500-list` (a Drive-shaped error response, to trigger a folder-load
   failure) — needed by User Story 2's Playwright tests
-- [ ] T002 [P] Extend `mock_e2e.go`'s userinfo endpoint and add an
+- [X] T002 [P] Extend `mock_e2e.go`'s userinfo endpoint and add an
   `about.get` handler, both driven by `BALLAST_E2E_OUTCOME_FILE`: userinfo
   outcomes for name+picture, name-only, and neither; `about.get` outcomes
   for `storageQuota.limit` present vs. absent (unlimited-storage case),
@@ -72,7 +72,7 @@ be complete before ANY user story can be implemented
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T003 [P] Create `frontend/src/styles/tokens.css` implementing the
+- [X] T003 [P] Create `frontend/src/styles/tokens.css` implementing the
   full token set from contracts/design-tokens.md — color roles
   (`--color-bg`, `--color-surface`, `--color-text`, `--color-text-muted`,
   `--color-accent`, `--color-accent-hover`, `--color-border`,
@@ -85,37 +85,37 @@ be complete before ANY user story can be implemented
   `--radius-md`, `--shadow-card`), the six `--filetype-*` accent tokens
   (reused by the Avatar fallback gradient per contracts/design-tokens.md),
   and a `--focus-ring` token
-- [ ] T004 Import `tokens.css` in `frontend/src/main.ts` before
+- [X] T004 Import `tokens.css` in `frontend/src/main.ts` before
   `style.css`/`app.css` so every screen has the tokens available
   (depends on T003)
-- [ ] T005 [P] Add a `drive_folder_name TEXT` column to the `upload`
+- [X] T005 [P] Add a `drive_folder_name TEXT` column to the `upload`
   table (additive migration, guarded the same way `ensureSchema()`
   guards existing migrations) in `internal/storage/schema.go`
   (data-model.md)
-- [ ] T006 Extend `storage.Upload`/`CreateUpload` to accept and persist
+- [X] T006 Extend `storage.Upload`/`CreateUpload` to accept and persist
   `driveFolderName`, and add `ListRecentUploads` (rows ordered by
   `started_at DESC`, capped at 50) to `internal/storage/upload.go`
   (data-model.md) (depends on T005)
-- [ ] T007 Update `App.UploadStart`'s signature to accept
+- [X] T007 Update `App.UploadStart`'s signature to accept
   `driveFolderName` and pass it through to `CreateUpload`; add the
   `Upload.ListRecent` Wails-bound method returning `UploadListItemDTO`
   (`fileName` via `filepath.Base(local_path)`, `driveFolderName` falling
   back to `"My Drive"` when null) in `app.go` (contracts/wails-bindings.md)
   (depends on T006)
-- [ ] T008 [P] Export the updated `Start` signature and the new
+- [X] T008 [P] Export the updated `Start` signature and the new
   `ListRecent` binding via `frontend/src/api/upload.ts` (depends on T007)
-- [ ] T009 [P] Add the `profile` OAuth scope to `oauthConfig` and parse
+- [X] T009 [P] Add the `profile` OAuth scope to `oauthConfig` and parse
   `name`/`picture` from the userinfo response into `UserInfo`/`Session`
   in `internal/auth/oauth.go` (research.md §7)
-- [ ] T010 [P] Add `display_name TEXT`/`picture_url TEXT` columns to the
+- [X] T010 [P] Add `display_name TEXT`/`picture_url TEXT` columns to the
   `account` table (additive migration) in `internal/storage/schema.go`,
   and extend `storage.Account`/`UpsertAccount`/`GetAccount` to carry them
   in `internal/storage/account.go` (data-model.md)
-- [ ] T011 Update `App.AuthGetStatus`/`App.AuthSignIn` to populate and
+- [X] T011 Update `App.AuthGetStatus`/`App.AuthSignIn` to populate and
   persist `display_name`/`picture_url` and return `name`/`pictureUrl` in
   `AuthStatus` (contracts/wails-bindings.md); export via
   `frontend/src/api/auth.ts` (depends on T009, T010)
-- [ ] T012 [P] Implement `internal/drive/about.go` wrapping Drive's
+- [X] T012 [P] Implement `internal/drive/about.go` wrapping Drive's
   `about.get` (`fields=storageQuota`) via the existing `driveService(ctx)`
   helper (research.md §8); add the `Drive.GetStorageQuota` Wails-bound
   method in `app.go` returning `StorageQuota` (`limitBytes` omitted for
@@ -141,13 +141,13 @@ Scenario 1).
 
 ### Tests for User Story 1
 
-- [ ] T013 [P] [US1] Playwright test asserting no layout
+- [X] T013 [P] [US1] Playwright test asserting no layout
   overflow/clipping on the sign-in, picker, and progress screens (the
   latter two inside the new sidebar shell) at minimum, default, and
   large supported window sizes, in
   `frontend/tests/visual-consistency.spec.ts` (quickstart.md Scenario 1
   step 4; SC-002)
-- [ ] T014 [P] [US1] Playwright test covering the sidebar's account
+- [X] T014 [P] [US1] Playwright test covering the sidebar's account
   row: name + photo render when both are present (T002's name+picture
   outcome); a generated-initials avatar renders when no photo is
   available or it fails to load (T002's name-only outcome), falling back
@@ -161,11 +161,11 @@ Scenario 1).
 
 ### Implementation for User Story 1
 
-- [ ] T015 [US1] Rewrite `frontend/src/style.css` to consume
+- [X] T015 [US1] Rewrite `frontend/src/style.css` to consume
   `tokens.css` custom properties instead of hardcoded values (removes
   the hardcoded `rgba(27, 38, 54, 1)` background and `white` text)
   (depends on T003, T004)
-- [ ] T016 [US1] Implement the persistent left sidebar shell in
+- [X] T016 [US1] Implement the persistent left sidebar shell in
   `frontend/src/main.ts` — two nav items (Upload, History) and a bottom
   account-status row wrapping the signed-in screens (picker, progress,
   and the upcoming history screen); sign-in stays full-screen and
@@ -178,7 +178,7 @@ Scenario 1).
   is absent (unlimited account) and when the `GetStorageQuota` call
   itself fails (contracts/wails-bindings.md, spec.md FR-012) (depends on
   T004, T011, T012)
-- [ ] T017 [US1] Rewrite `frontend/src/app.css` so `.signin-screen`
+- [X] T017 [US1] Rewrite `frontend/src/app.css` so `.signin-screen`
   (full-screen, unchanged structurally aside from T033's wave layer),
   the new sidebar shell (including the avatar circle and storage-usage
   bar), and `.picker-screen`/`.progress-screen` and their controls
@@ -189,7 +189,7 @@ Scenario 1).
   (Primary button fill), the sidebar's translucent/blurred surface
   (Sidebar translucency), and the `.content` scrim (Content scrim) per
   contracts/design-tokens.md (depends on T003, T004, T016)
-- [ ] T033 [P] [US1] Add the ambient wave/dot `<svg class="wave-layer">`
+- [X] T033 [P] [US1] Add the ambient wave/dot `<svg class="wave-layer">`
   markup (contracts/design-tokens.md's Ambient background) to
   `frontend/src/screens/signin.ts` (behind the sign-in card, full-screen)
   and once to the sidebar shell markup in `frontend/src/main.ts` (behind
@@ -212,12 +212,12 @@ renders a distinct, consistent visual treatment (quickstart.md Scenario 2).
 
 ### Tests for User Story 2
 
-- [ ] T018 [P] [US2] Playwright test triggering the picker's
+- [X] T018 [P] [US2] Playwright test triggering the picker's
   folder-loading state (T001's `slow-list` outcome) and folder-load
   error (T001's `500-list` outcome), asserting the correct
   state-treatment classes render, in
   `frontend/tests/state-feedback.spec.ts`
-- [ ] T019 [P] [US2] Playwright test triggering a sign-in failure
+- [X] T019 [P] [US2] Playwright test triggering a sign-in failure
   (existing `deny` outcome), an upload failure, an upload success, and an
   upload retry-after-drop (existing `network-fail` outcome), asserting
   each renders its own consistent state-treatment class distinct from
@@ -227,22 +227,22 @@ renders a distinct, consistent visual treatment (quickstart.md Scenario 2).
 
 ### Implementation for User Story 2
 
-- [ ] T020 [US2] Add shared state-treatment CSS classes (loading, error,
+- [X] T020 [US2] Add shared state-treatment CSS classes (loading, error,
   success, warning) to `frontend/src/app.css`, each keyed to
   `tokens.css`'s `--color-error`/`--color-success`/`--color-warning`/
   `--color-accent` (contracts/design-tokens.md's State-treatment
   convention) (depends on T003)
-- [ ] T021 [US2] Add a loading indicator to
+- [X] T021 [US2] Add a loading indicator to
   `frontend/src/screens/picker.ts`, shown while `Drive.ListFolders` is
   in flight, and apply the shared error-state class/markup to its
   folder-load and upload-start error paragraphs (depends on T020)
-- [ ] T022 [P] [US2] Apply the shared error-state class/markup to
+- [X] T022 [P] [US2] Apply the shared error-state class/markup to
   `frontend/src/screens/signin.ts`'s error paragraph (depends on T020)
-- [ ] T023 [US2] Apply the shared success/error/warning state classes to
+- [X] T023 [US2] Apply the shared success/error/warning state classes to
   `frontend/src/screens/progress.ts`'s result states (succeeded, failed,
   paused/retrying, awaiting_confirmation), replacing today's inline
   `.progress-result--*` hex colors (depends on T020)
-- [ ] T032 [US2] Add a small error-message mapping (e.g.
+- [X] T032 [US2] Add a small error-message mapping (e.g.
   `frontend/src/errors.ts`) that translates known technical error
   substrings — sign-in denial, keychain-unavailable, network/connection
   failures, Drive API error codes — into plain-language copy, with a
@@ -269,17 +269,17 @@ confirm it's clearly marked; restart the app and confirm status persists
 
 ### Tests for User Story 3
 
-- [ ] T024 [P] [US3] Go unit test for `ListRecentUploads` — ordering
+- [X] T024 [P] [US3] Go unit test for `ListRecentUploads` — ordering
   (most recent first), the 50-row limit, and `driveFolderName`'s
   `"My Drive"` fallback for null values — in
   `internal/storage/upload_test.go` (depends on T006)
-- [ ] T025 [P] [US3] Playwright test covering quickstart.md Scenario 3
+- [X] T025 [P] [US3] Playwright test covering quickstart.md Scenario 3
   (completed + live in-progress + failed rows, status persists across
   `DebugRestart`) in `frontend/tests/upload-history.spec.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T026 [US3] Implement `frontend/src/screens/history.ts` — fetch
+- [X] T026 [US3] Implement `frontend/src/screens/history.ts` — fetch
   `Upload.ListRecent` on mount, render one row per upload (file name,
   destination folder, status, progress or failure reason, and a
   file-type icon colored via the extension-derived `--filetype-*` token
@@ -289,7 +289,7 @@ confirm it's clearly marked; restart the app and confirm status persists
   `upload:awaiting-confirmation` and update the matching row by `id`,
   prepending a new row for any unseen `id` (contracts/wails-bindings.md)
   (depends on T008, T016, T017, T020)
-- [ ] T027 [US3] Wire the sidebar's History nav item (rendered by T016)
+- [X] T027 [US3] Wire the sidebar's History nav item (rendered by T016)
   in `frontend/src/main.ts` to display `history.ts` via the existing
   screen-swap (`teardown`) pattern (depends on T026)
 
@@ -302,19 +302,19 @@ feature complete
 
 **Purpose**: Improvements that affect every screen, not one story
 
-- [ ] T028 [P] Add global `:focus-visible` focus-ring styling (the
+- [X] T028 [P] Add global `:focus-visible` focus-ring styling (the
   `--focus-ring` token) to every interactive element (buttons, links,
   folder-list items, sidebar nav items, history rows) across all four
   screens in `frontend/src/app.css`, per contracts/design-tokens.md's
   Accessibility requirements (FR-007)
-- [ ] T029 Manual keyboard-only walkthrough and OS light/dark theme
+- [X] T029 Manual keyboard-only walkthrough and OS light/dark theme
   toggle across all four screens per quickstart.md's Edge Cases
   checklist, recording results for SC-004/SC-005
-- [ ] T030 [P] Audit `tokens.css`'s color pairs (text/background, each
+- [X] T030 [P] Audit `tokens.css`'s color pairs (text/background, each
   state color/background) for WCAG AA contrast in both light and dark
   values, adjusting any failing token values (contracts/design-tokens.md's
   Accessibility requirements)
-- [ ] T031 Run quickstart.md Scenarios 1–3 end-to-end and confirm
+- [X] T031 Run quickstart.md Scenarios 1–3 end-to-end and confirm
   SC-001–SC-006
 
 ---

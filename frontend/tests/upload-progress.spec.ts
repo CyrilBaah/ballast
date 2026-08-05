@@ -112,8 +112,8 @@ test('network loss mid-upload shows a retrying state, never a failure, and compl
   await expect(page.locator('.progress-result')).toContainText('retrying', {
     timeout: 15_000,
   });
-  await expect(page.locator('.progress-result')).toHaveClass(/progress-result--retrying/);
-  await expect(page.locator('.progress-result')).not.toHaveClass(/progress-result--failed/);
+  await expect(page.locator('.progress-result')).toHaveClass(/state-warning/);
+  await expect(page.locator('.progress-result')).not.toHaveClass(/state-error/);
 
   setOutcome('approve');
   await expect(page.locator('.progress-result')).toContainText('Upload complete', {
