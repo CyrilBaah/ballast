@@ -26,6 +26,11 @@ const (
 	AwaitingConfirmationFileChanged    = "file_changed"
 )
 
+// baselineChunkSizeBytes mirrors drive.BaselineChunkSize (data-model.md) --
+// duplicated here rather than imported, the same way this package already
+// mirrors drive's awaiting_confirmation reason strings independently.
+const baselineChunkSizeBytes int64 = 8 * 1024 * 1024
+
 // nonTerminalStatuses are the statuses that count toward FR-013's
 // single-active-upload constraint and are eligible for crash recovery.
 var nonTerminalStatuses = []UploadState{UploadInProgress, UploadPaused, UploadAwaitingConfirmation}
@@ -42,6 +47,8 @@ type Upload struct {
 	SessionURI                 *string
 	ContentHashState           []byte
 	AwaitingConfirmationReason *string
+	ChunkSizeBytes             int64
+	ConsecutiveChunkSuccesses  int
 	DriveFileID                *string
 	DriveFileLink              *string
 	FailureReason              *string
@@ -88,6 +95,7 @@ func (d *DB) CreateUpload(localPath string, localSizeBytes int64, localMtime tim
 		LocalMtime:     localMtime,
 		DriveFolderID:  driveFolderID,
 		Status:         UploadPending,
+		ChunkSizeBytes: baselineChunkSizeBytes,
 		StartedAt:      now,
 	}, nil
 }
@@ -162,13 +170,13 @@ func (d *DB) SetUploadAwaitingConfirmation(id int64, reason string) error {
 }
 
 // UpdateUploadProgress records the latest Drive-acknowledged bytes-sent
-// offset together with the session URI and checkpointed content-hash
-// state, atomically -- these three fields must always move together
-// (data-model.md's correctness invariant).
-func (d *DB) UpdateUploadProgress(id int64, bytesSent int64, sessionURI string, contentHashState []byte) error {
+// offset together with the session URI, checkpointed content-hash state,
+// and current chunk-size state, atomically -- these fields must always
+// move together (data-model.md's correctness invariant).
+func (d *DB) UpdateUploadProgress(id int64, bytesSent int64, sessionURI string, contentHashState []byte, chunkSizeBytes int64, consecutiveChunkSuccesses int) error {
 	res, err := d.conn.Exec(`
-		UPDATE upload SET bytes_sent = ?, session_uri = ?, content_hash_state = ? WHERE id = ?
-	`, bytesSent, sessionURI, contentHashState, id)
+		UPDATE upload SET bytes_sent = ?, session_uri = ?, content_hash_state = ?, chunk_size_bytes = ?, consecutive_chunk_successes = ? WHERE id = ?
+	`, bytesSent, sessionURI, contentHashState, chunkSizeBytes, consecutiveChunkSuccesses, id)
 	if err != nil {
 		return fmt.Errorf("storage: update upload progress: %w", err)
 	}
@@ -239,6 +247,12 @@ func (d *DB) SetUploadCancelled(id int64) error {
 // the row back to in_progress -- restarting the same logical upload from
 // byte 0 against a brand-new Drive session (data-model.md). Only valid
 // when the upload is currently awaiting_confirmation (FR-010).
+//
+// Deliberately leaves chunk_size_bytes/consecutive_chunk_successes
+// untouched: a byte-0 restart of the same logical upload is not a new
+// upload for chunk-size purposes, regardless of which
+// awaiting_confirmation_reason triggered it (spec Clarifications,
+// research.md §5).
 func (d *DB) ResetUploadForRestart(id int64, newSize int64, newMtime time.Time) error {
 	res, err := d.conn.Exec(`
 		UPDATE upload
@@ -297,6 +311,7 @@ func (d *DB) GetUpload(id int64) (*Upload, error) {
 	row := d.conn.QueryRow(`
 		SELECT local_path, local_size_bytes, local_mtime, drive_folder_id, status, bytes_sent,
 			session_uri, content_hash_state, awaiting_confirmation_reason,
+			chunk_size_bytes, consecutive_chunk_successes,
 			drive_file_id, drive_file_link, failure_reason, started_at, ended_at
 		FROM upload WHERE id = ?
 	`, id)
@@ -311,6 +326,7 @@ func (d *DB) GetUpload(id int64) (*Upload, error) {
 	err := row.Scan(
 		&u.LocalPath, &u.LocalSizeBytes, &localMtime, &u.DriveFolderID, &status, &u.BytesSent,
 		&sessionURI, &contentHashState, &awaitingReason,
+		&u.ChunkSizeBytes, &u.ConsecutiveChunkSuccesses,
 		&driveFileID, &driveFileLink, &failureReason, &startedAt, &endedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
