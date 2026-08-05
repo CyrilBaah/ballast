@@ -146,10 +146,23 @@ test('an expired session prompts for confirmation and restarts from byte 0 on co
 test('a source file deleted while paused fails with a clear reason, not awaiting-confirmation (Edge Case)', async ({
   page,
 }) => {
-  const file = makeTempFile('will-be-deleted.txt', 5_000);
+  // Windows opens files without FILE_SHARE_DELETE by default, so it
+  // refuses to delete a file the backend still has open -- this exact
+  // interleaving isn't reproducible there the way it is on POSIX (mirrors
+  // internal/drive/upload_test.go's identical skip for the same reason).
+  test.skip(process.platform === 'win32', 'deleting a file that\'s still open elsewhere is not reproducible on Windows');
+
+  // The source-file-identity check (internal/drive/identity.go) only runs
+  // once at least one chunk has been acknowledged (there's no prefix to
+  // verify before that) -- a file small enough to fail entirely on its
+  // first-ever attempt would leave bytesSent at 0 and this deletion
+  // undetected via the backend's still-open file handle. Larger than one
+  // baseline (8 MiB) chunk guarantees a first chunk succeeds before the
+  // deterministic 'network-fail-after-progress' (mock_e2e.go) pauses it.
+  const file = makeTempFile('will-be-deleted.txt', 12 * 1024 * 1024);
   const uploadId = await startUpload(page, file);
 
-  setOutcome('network-fail');
+  setOutcome('network-fail-after-progress');
   await expect.poll(() => getStatus(page, uploadId).then((s) => s.status), { timeout: 15_000 }).toBe('paused');
 
   fs.rmSync(file.path);
@@ -206,6 +219,9 @@ test('cancelling a paused upload frees the slot for a new upload immediately (Ac
   await stubFilePicker(page, secondFile);
   await page.click('#pick-file-btn');
   await page.click('#upload-btn');
+  // #upload-error lives on the picker screen (frontend/src/screens/picker.ts),
+  // which this navigation has already moved away from -- .progress-screen
+  // becoming visible is itself the proof that the second upload was
+  // accepted without rejection; there's no error surface to check on this screen.
   await expect(page.locator('.progress-screen')).toBeVisible({ timeout: 10_000 });
-  await expect(page.locator('#upload-error')).toHaveText('');
 });

@@ -146,6 +146,11 @@ func newE2EMockServer() *httptest.Server {
 		time.Sleep(150 * time.Millisecond)
 
 		outcome := readE2EOutcome()
+
+		mu.Lock()
+		hasProgress := session != nil && session.received > 0
+		mu.Unlock()
+
 		switch outcome {
 		case "network-fail":
 			hj, ok := w.(http.Hijacker)
@@ -158,6 +163,26 @@ func newE2EMockServer() *httptest.Server {
 				conn.Close()
 			}
 			return
+		case "network-fail-after-progress":
+			// Deterministic (not timing-based) version of "network-fail":
+			// only fails a request once at least one prior chunk has
+			// already been accepted, letting a test reliably pause an
+			// upload with a nonzero checkpoint -- e.g. to prove recovery
+			// resumes from that checkpoint rather than from 0 -- without
+			// racing setOutcome() against how fast the single request
+			// completes. Requests before any progress succeed normally.
+			if hasProgress {
+				hj, ok := w.(http.Hijacker)
+				if !ok {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
+				conn, _, err := hj.Hijack()
+				if err == nil {
+					conn.Close()
+				}
+				return
+			}
 		case "429":
 			writeE2EDriveError(w, http.StatusTooManyRequests, "rateLimitExceeded", "", "rate limit exceeded")
 			return
