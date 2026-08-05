@@ -4,6 +4,7 @@
 // reflects the true state even after a reload.
 import { GetStatus, ConfirmRestart, Cancel, type UploadStatus } from '../api/upload';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
+import { toPlainLanguage } from '../errors';
 
 export interface ProgressScreenOptions {
     container: HTMLElement;
@@ -80,23 +81,28 @@ export function renderProgress(opts: ProgressScreenOptions): () => void {
         confirmEl.hidden = true;
     }
 
+    const RESULT_STATE_CLASSES = ['state-success', 'state-error', 'state-warning', 'state-loading'];
+
+    function setResultState(stateClass: string | null) {
+        resultEl.classList.remove(...RESULT_STATE_CLASSES);
+        if (stateClass) resultEl.classList.add(stateClass);
+    }
+
     function renderRetrying() {
         hideConfirmation();
-        resultEl.classList.remove('progress-result--success', 'progress-result--failed');
-        resultEl.classList.add('progress-result--retrying');
+        setResultState('state-warning');
         resultEl.textContent = 'Still in progress — retrying…';
     }
 
     function renderInProgress() {
         hideConfirmation();
-        resultEl.classList.remove('progress-result--success', 'progress-result--failed', 'progress-result--retrying');
+        setResultState('state-loading');
         resultEl.textContent = '';
     }
 
     function renderSuccess(driveFileLink: string) {
         hideConfirmation();
-        resultEl.classList.remove('progress-result--failed', 'progress-result--retrying');
-        resultEl.classList.add('progress-result--success');
+        setResultState('state-success');
         resultEl.innerHTML = '';
         resultEl.appendChild(document.createTextNode('Upload complete — '));
         const link = document.createElement('a');
@@ -109,19 +115,18 @@ export function renderProgress(opts: ProgressScreenOptions): () => void {
 
     function renderFailure(reason: string) {
         hideConfirmation();
-        resultEl.classList.remove('progress-result--success', 'progress-result--retrying');
-        resultEl.classList.add('progress-result--failed');
-        resultEl.textContent = `Upload failed: ${reason}`;
+        setResultState('state-error');
+        resultEl.textContent = `Upload failed: ${toPlainLanguage(reason)}`;
     }
 
     function renderCancelled() {
         hideConfirmation();
-        resultEl.classList.remove('progress-result--success', 'progress-result--failed', 'progress-result--retrying');
+        setResultState(null);
         resultEl.textContent = 'Upload cancelled.';
     }
 
     function renderAwaitingConfirmation(reason: string) {
-        resultEl.classList.remove('progress-result--success', 'progress-result--failed', 'progress-result--retrying');
+        setResultState('state-warning');
         resultEl.textContent = '';
         confirmTextEl.textContent = CONFIRMATION_COPY[reason] ?? 'Restart this upload from the beginning?';
         confirmEl.hidden = false;
@@ -139,7 +144,8 @@ export function renderProgress(opts: ProgressScreenOptions): () => void {
         } catch (err) {
             confirmRestartBtn.disabled = false;
             confirmCancelBtn.disabled = false;
-            confirmTextEl.textContent = err instanceof Error ? err.message : String(err);
+            const message = err instanceof Error ? err.message : String(err);
+            confirmTextEl.textContent = toPlainLanguage(message);
         }
     });
 
@@ -152,7 +158,8 @@ export function renderProgress(opts: ProgressScreenOptions): () => void {
         } catch (err) {
             confirmRestartBtn.disabled = false;
             confirmCancelBtn.disabled = false;
-            confirmTextEl.textContent = err instanceof Error ? err.message : String(err);
+            const message = err instanceof Error ? err.message : String(err);
+            confirmTextEl.textContent = toPlainLanguage(message);
         }
     });
 
