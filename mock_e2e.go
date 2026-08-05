@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	oauth2pkg "golang.org/x/oauth2"
 )
@@ -134,6 +135,15 @@ func newE2EMockServer() *httptest.Server {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+
+		// E2E test files are only a few KB -- far smaller than a real chunk
+		// -- so a whole upload is exactly one request. Without a deliberate
+		// pause here, that single request can complete (under whatever
+		// outcome was already active) before Playwright's own setOutcome()
+		// write lands, racing the test rather than exercising it. This delay
+		// gives that fs write a reliable window on every request, regardless
+		// of file size or CI runner speed.
+		time.Sleep(150 * time.Millisecond)
 
 		outcome := readE2EOutcome()
 		switch outcome {
