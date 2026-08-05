@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 )
@@ -422,8 +424,14 @@ func TestUploadFileDetectsFileChangedDuringPause(t *testing.T) {
 	path, _ := makeTestFile(t, size)
 	baseline := statBaseline(t, path)
 
+	// Waited on via the deferred wg.Wait() below so the goroutine's
+	// t.Errorf calls, if any, always land before the test itself
+	// completes -- calling them afterward panics the whole test binary.
+	var wg sync.WaitGroup
+	wg.Add(1)
 	srv.setOutcome("approve")
 	go func() {
+		defer wg.Done()
 		for srv.bytesReceived() < BaselineChunkSize {
 			time.Sleep(time.Millisecond)
 		}
@@ -442,6 +450,7 @@ func TestUploadFileDetectsFileChangedDuringPause(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 		srv.setOutcome("approve")
 	}()
+	defer wg.Wait()
 
 	_, err := UploadFile(context.Background(), srv.Client(), srv.URL, 1, path, "folder-1", int64(size), baseline, ResumeState{}, UploadCallbacks{})
 	if err == nil {
@@ -464,6 +473,17 @@ func TestUploadFileDetectsFileChangedDuringPause(t *testing.T) {
 // restart with, so it must reach failed (terminal, not recoverable) --
 // never awaiting_confirmation, and never an indefinite hang.
 func TestUploadFileFailsNotRecoverableWhenSourceFileDeletedDuringPause(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Windows opens files without FILE_SHARE_DELETE by default, so it
+		// refuses to delete a file UploadFile still has open -- this exact
+		// interleaving (external deletion while our own handle is open)
+		// isn't reproducible there the way it is on POSIX, where unlinking
+		// an open file is always allowed. The "local file missing" code
+		// path itself is simple enough (a failing os.Stat) that this gap
+		// doesn't leave it meaningfully untested on the platforms where the
+		// scenario can actually occur.
+		t.Skip("deleting a file that's still open elsewhere is not reproducible on Windows")
+	}
 	noopSleep(t)
 	srv := newFakeResumableServer()
 	defer srv.Close()
@@ -472,8 +492,11 @@ func TestUploadFileFailsNotRecoverableWhenSourceFileDeletedDuringPause(t *testin
 	path, _ := makeTestFile(t, size)
 	baseline := statBaseline(t, path)
 
+	var wg sync.WaitGroup
+	wg.Add(1)
 	srv.setOutcome("approve")
 	go func() {
+		defer wg.Done()
 		for srv.bytesReceived() < BaselineChunkSize {
 			time.Sleep(time.Millisecond)
 		}
@@ -485,6 +508,7 @@ func TestUploadFileFailsNotRecoverableWhenSourceFileDeletedDuringPause(t *testin
 		time.Sleep(10 * time.Millisecond)
 		srv.setOutcome("approve")
 	}()
+	defer wg.Wait()
 
 	_, err := UploadFile(context.Background(), srv.Client(), srv.URL, 1, path, "folder-1", int64(size), baseline, ResumeState{}, UploadCallbacks{})
 	if err == nil {
