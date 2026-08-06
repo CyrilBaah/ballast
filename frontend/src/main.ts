@@ -6,7 +6,7 @@ import { renderSignIn } from './screens/signin';
 import { renderPicker } from './screens/picker';
 import { renderProgress } from './screens/progress';
 import { renderHistory } from './screens/history';
-import { GetRecoverable, type RecoverableUpload } from './api/upload';
+import { GetRecoverable, GetStatus as UploadGetStatus, type RecoverableUpload } from './api/upload';
 import { GetStatus as AuthGetStatus, type AuthStatus } from './api/auth';
 import { GetStorageQuota } from './api/drive';
 import type { LocalFileRef } from './api/files';
@@ -37,6 +37,76 @@ let teardown: (() => void) | null = null; // sign-in screen's teardown
 let screenTeardown: (() => void) | null = null; // active screen inside the shell's .content
 let shell: ShellHandle | null = null;
 let currentEmail: string | undefined; // kept for the picker's "Signed in as" line
+
+// The upload the app last knew to be non-terminal, if any -- set when a
+// new upload starts (onUploadStarted) or one is resumed at launch
+// (routeAfterSignIn's recoverable branch), cleared once the progress
+// screen observes a terminal status (renderProgress's onTerminal).
+let activeUpload: { id: number; fileName: string } | null = null;
+
+// Only awaiting_confirmation actually strands the user if they navigate
+// away from it: it's the sole status that halts forward progress until
+// the user picks Restart or Cancel on the progress screen (the only place
+// those controls are shown). in_progress and paused keep moving on their
+// own in the background and are already fully visible from History (per
+// User Story 3 / SC-003, frontend/tests/upload-history.spec.ts) -- History
+// must NOT redirect away from those, or it becomes unreachable for the
+// entire duration of every upload. Upload (the picker) redirects on any
+// non-terminal status instead, since starting a second upload is never
+// valid while one exists (UploadStart: ErrUploadAlreadyInProgress) --
+// sending the user back to the existing upload beats surfacing that raw
+// backend error.
+const NON_TERMINAL_UPLOAD_STATUSES = new Set(['pending', 'in_progress', 'paused', 'awaiting_confirmation']);
+
+// History only needs to redirect for the status that actually blocks
+// forward progress -- in_progress/paused rows stay visible and
+// live-updating from History itself (SC-003), so redirecting away from
+// them would defeat that.
+const HISTORY_BLOCKING_STATUSES = new Set(['awaiting_confirmation']);
+
+// Shows the progress screen for the tracked active upload if its status is
+// in blockingStatuses, and reports whether it did so. Deliberately reads
+// status via UploadGetStatus (a plain DB read) rather than
+// UploadGetRecoverable, which has the side effect of re-launching a resume
+// goroutine for a paused upload -- calling that on every nav click would
+// risk spawning duplicate goroutines racing to send chunks to the same
+// Drive session.
+async function redirectToActiveUpload(blockingStatuses: ReadonlySet<string>): Promise<boolean> {
+    if (!activeUpload) return false;
+    const upload = activeUpload;
+
+    let status: { status: string };
+    try {
+        status = await UploadGetStatus(upload.id);
+    } catch (err) {
+        // Can't confirm its status -- don't strand the user on a broken
+        // redirect loop, just let the requested navigation proceed.
+        console.error('Upload.GetStatus failed', err);
+        activeUpload = null;
+        return false;
+    }
+
+    if (!NON_TERMINAL_UPLOAD_STATUSES.has(status.status)) {
+        activeUpload = null;
+        return false;
+    }
+    if (!blockingStatuses.has(status.status)) {
+        return false;
+    }
+
+    if (!shell) return false; // signed out while the status check was in flight
+    screenTeardown?.();
+    shell.setActiveNav('upload');
+    screenTeardown = renderProgress({
+        container: shell.content,
+        uploadId: upload.id,
+        fileName: upload.fileName,
+        onTerminal: () => {
+            if (activeUpload?.id === upload.id) activeUpload = null;
+        },
+    });
+    return true;
+}
 
 function showSignIn() {
     shell = null;
@@ -88,8 +158,8 @@ function mountShell(): ShellHandle {
         navHistory.setAttribute('aria-current', screen === 'history' ? 'page' : 'false');
     }
 
-    navUpload.addEventListener('click', () => showUpload());
-    navHistory.addEventListener('click', () => showHistory());
+    navUpload.addEventListener('click', () => void showUpload());
+    navHistory.addEventListener('click', () => void showHistory());
 
     void renderAccountStatus(app);
 
@@ -155,8 +225,10 @@ async function renderAccountStatus(root: HTMLElement) {
     }
 }
 
-function showUpload() {
+async function showUpload() {
     if (!shell) return;
+    if (await redirectToActiveUpload(NON_TERMINAL_UPLOAD_STATUSES)) return;
+    if (!shell) return; // signed out while the status check was in flight
     screenTeardown?.();
     shell.setActiveNav('upload');
     screenTeardown = renderPicker({
@@ -164,19 +236,25 @@ function showUpload() {
         email: currentEmail,
         onUploadStarted: (uploadId: number, file: LocalFileRef) => {
             if (!shell) return; // signed out before the upload could start rendering progress
+            activeUpload = { id: uploadId, fileName: file.name };
             screenTeardown?.();
             screenTeardown = renderProgress({
                 container: shell.content,
                 uploadId,
                 fileName: file.name,
+                onTerminal: () => {
+                    if (activeUpload?.id === uploadId) activeUpload = null;
+                },
             });
         },
         onSignedOut: () => showSignIn(),
     });
 }
 
-function showHistory() {
+async function showHistory() {
     if (!shell) return;
+    if (await redirectToActiveUpload(HISTORY_BLOCKING_STATUSES)) return;
+    if (!shell) return; // signed out while the status check was in flight
     screenTeardown?.();
     shell.setActiveNav('history');
     screenTeardown = renderHistory({ container: shell.content });
@@ -199,17 +277,22 @@ async function routeAfterSignIn(_status: AuthStatus) {
     if (!shell) return; // signed out again before this resolved
 
     if (recoverable) {
+        const recoveredId = recoverable.id;
+        activeUpload = { id: recoveredId, fileName: recoverable.fileName };
         shell.setActiveNav('upload');
         screenTeardown = renderProgress({
             container: shell.content,
             uploadId: recoverable.id,
             fileName: recoverable.fileName,
             resuming: true,
+            onTerminal: () => {
+                if (activeUpload?.id === recoveredId) activeUpload = null;
+            },
         });
         return;
     }
 
-    showUpload();
+    void showUpload();
 }
 
 showSignIn();

@@ -69,6 +69,7 @@ function statusPresentation(item: UploadListItem): { label: string; stateClass: 
                 stateClass: 'state-error',
             };
         case 'paused':
+            return { label: 'Retrying…', stateClass: 'state-warning' };
         case 'awaiting_confirmation':
             return { label: 'Needs attention', stateClass: 'state-warning' };
         case 'in_progress':
