@@ -14,6 +14,10 @@ export interface ProgressScreenOptions {
     // previous run (Upload.GetRecoverable) rather than one just started --
     // shows "Resuming upload…" until the first live event/status arrives.
     resuming?: boolean;
+    // Called once the upload reaches a terminal status (succeeded, failed,
+    // or cancelled), so callers tracking "is there an active upload to
+    // redirect back to" know to stop treating this one as active.
+    onTerminal?: () => void;
 }
 
 interface UploadProgressPayload {
@@ -48,7 +52,7 @@ const CONFIRMATION_COPY: Record<string, string> = {
 };
 
 export function renderProgress(opts: ProgressScreenOptions): () => void {
-    const { container, uploadId, fileName, resuming } = opts;
+    const { container, uploadId, fileName, resuming, onTerminal } = opts;
 
     container.innerHTML = `
         <div class="progress-screen">
@@ -74,7 +78,8 @@ export function renderProgress(opts: ProgressScreenOptions): () => void {
     const confirmCancelBtn = container.querySelector<HTMLButtonElement>('#progress-confirm-cancel-btn')!;
 
     function renderBytes(bytesSent: number, totalBytes: number) {
-        bytesEl.textContent = totalBytes > 0 ? `${bytesSent} / ${totalBytes} bytes` : `${bytesSent} bytes`;
+        bytesEl.textContent =
+            totalBytes > 0 ? `${Math.round((bytesSent / totalBytes) * 100)}%` : `${bytesSent} bytes`;
     }
 
     function hideConfirmation() {
@@ -101,6 +106,7 @@ export function renderProgress(opts: ProgressScreenOptions): () => void {
     }
 
     function renderSuccess(driveFileLink: string) {
+        onTerminal?.();
         hideConfirmation();
         setResultState('state-success');
         resultEl.innerHTML = '';
@@ -114,12 +120,14 @@ export function renderProgress(opts: ProgressScreenOptions): () => void {
     }
 
     function renderFailure(reason: string) {
+        onTerminal?.();
         hideConfirmation();
         setResultState('state-error');
         resultEl.textContent = `Upload failed: ${toPlainLanguage(reason)}`;
     }
 
     function renderCancelled() {
+        onTerminal?.();
         hideConfirmation();
         setResultState(null);
         resultEl.textContent = 'Upload cancelled.';
