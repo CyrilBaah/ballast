@@ -18,6 +18,10 @@ export function DebugRestart() {
   return window['go']['main']['App']['DebugRestart']();
 }
 
+export function DebugSessionReleaseCount() {
+  return window['go']['main']['App']['DebugSessionReleaseCount']();
+}
+
 export function DriveGetStorageQuota() {
   return window['go']['main']['App']['DriveGetStorageQuota']();
 }

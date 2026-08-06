@@ -72,6 +72,13 @@ func newE2EMockServer() *httptest.Server {
 
 	var mu sync.Mutex
 	var session *e2eUploadSession
+	// sessionReleaseCount counts DELETEs against the resumable-session URL
+	// (UploadCancel and UploadConfirmRestart's best-effort release of a
+	// stale session), exposed to Playwright via /debug/session-release-count
+	// so a regression that drops that release call is actually caught,
+	// rather than being invisible because this mock always returns 204
+	// regardless of whether DELETE was ever sent.
+	var sessionReleaseCount int
 	// srv is assigned once httptest.NewServer starts the listener below;
 	// handlers registered before that point (e.g. /userinfo, for the
 	// avatar URL it returns) only read it once a real request arrives,
@@ -205,7 +212,11 @@ func newE2EMockServer() *httptest.Server {
 
 	mux.HandleFunc("/upload/drive/v3/files/session", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
-			// Upload.Cancel's best-effort session release -- always succeeds.
+			// Upload.Cancel/UploadConfirmRestart's best-effort session
+			// release -- always succeeds.
+			mu.Lock()
+			sessionReleaseCount++
+			mu.Unlock()
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -269,6 +280,18 @@ func newE2EMockServer() *httptest.Server {
 		case "404-session":
 			writeE2EDriveError(w, http.StatusNotFound, "notFound", "", "session not found")
 			return
+		case "404-session-after-progress":
+			// Deterministic version of "404-session": only expires the
+			// session once at least one prior chunk has already been
+			// accepted, so a test can reliably reach awaiting_confirmation
+			// for a session whose URI is already persisted to the DB
+			// (session_uri is only recorded there after a chunk succeeds),
+			// without racing setOutcome() against how fast a single-chunk
+			// upload completes.
+			if hasProgress {
+				writeE2EDriveError(w, http.StatusNotFound, "notFound", "", "session not found")
+				return
+			}
 		case "410-session":
 			writeE2EDriveError(w, http.StatusGone, "gone", "", "session gone")
 			return
@@ -326,6 +349,18 @@ func newE2EMockServer() *httptest.Server {
 
 		w.Header().Set("Range", "bytes=0-"+strconv.FormatInt(session.received-1, 10))
 		w.WriteHeader(resumeIncomplete)
+	})
+
+	// /debug/session-release-count backs Debug.SessionReleaseCount
+	// (app.go), E2E-test-only plumbing that lets Playwright assert
+	// UploadConfirmRestart/UploadCancel actually told Drive to release a
+	// stale session, not just abandoned it locally.
+	mux.HandleFunc("/debug/session-release-count", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		count := sessionReleaseCount
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"count": count})
 	})
 
 	srv = httptest.NewServer(mux)

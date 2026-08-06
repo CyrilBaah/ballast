@@ -12,6 +12,8 @@ export function AuthSignOut():Promise<void>;
 
 export function DebugRestart():Promise<void>;
 
+export function DebugSessionReleaseCount():Promise<number>;
+
 export function DriveGetStorageQuota():Promise<drive.StorageQuota>;
 
 export function DriveListFolders(arg1:string):Promise<Array<drive.Folder>>;

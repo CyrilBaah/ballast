@@ -120,10 +120,16 @@ test('storage quota exceeded fails within 5 seconds with a specific reason and n
 test('an expired session prompts for confirmation and restarts from byte 0 on confirm (Acceptance Scenario 3)', async ({
   page,
 }) => {
-  const file = makeTempFile('expired-session.txt', 5_000);
+  // Larger than one baseline (8 MiB) chunk guarantees a first chunk
+  // succeeds -- and its session URI gets persisted to the DB -- before the
+  // deterministic '404-session-after-progress' (mock_e2e.go) expires the
+  // session on the next chunk. A session that never acknowledges a chunk
+  // is never persisted, so restarting it wouldn't exercise the
+  // release-the-old-session-on-restart assertion below.
+  const file = makeTempFile('expired-session.txt', 12 * 1024 * 1024);
+  setOutcome('404-session-after-progress');
   const uploadId = await startUpload(page, file);
 
-  setOutcome('404-session');
   await expect
     .poll(() => getStatus(page, uploadId).then((s) => s.status), { timeout: 15_000 })
     .toBe('awaiting_confirmation');
@@ -133,6 +139,13 @@ test('an expired session prompts for confirmation and restarts from byte 0 on co
   await expect(page.locator('#progress-confirm')).toBeVisible();
   await expect(page.locator('#progress-confirm-text')).toContainText('session expired');
 
+  // DebugSessionReleaseCount is a running total for the whole mock-server
+  // process, shared across every test in the run -- so the restart's
+  // effect is checked as a delta, not an absolute count.
+  const releaseCountBefore = await page.evaluate(() =>
+    (window as any).go.main.App.DebugSessionReleaseCount(),
+  );
+
   setOutcome('approve');
   await page.click('#progress-confirm-restart-btn');
 
@@ -141,6 +154,15 @@ test('an expired session prompts for confirmation and restarts from byte 0 on co
     .toBe('succeeded');
   const finalStatus = await getStatus(page, uploadId);
   expect(finalStatus.bytesSent).toBe(file.sizeBytes);
+
+  // Confirms the abandoned pre-restart session was actually released with
+  // Drive (app.go's UploadConfirmRestart), not just discarded locally --
+  // otherwise it could keep completing server-side and produce a
+  // duplicate file alongside the restarted upload's.
+  const releaseCountAfter = await page.evaluate(() =>
+    (window as any).go.main.App.DebugSessionReleaseCount(),
+  );
+  expect(releaseCountAfter - releaseCountBefore).toBe(1);
 });
 
 test('a source file deleted while paused fails with a clear reason, not awaiting-confirmation (Edge Case)', async ({

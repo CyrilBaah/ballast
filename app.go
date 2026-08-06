@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -807,4 +808,29 @@ func (a *App) DebugRestart() error {
 	}
 	a.encKey = key
 	return nil
+}
+
+// DebugSessionReleaseCount reports how many DELETEs the E2E mock Drive
+// server has received against a resumable-upload session. It exists so
+// Playwright can assert that UploadConfirmRestart (and UploadCancel)
+// actually release a stale session with Drive rather than only
+// discarding it locally -- silently dropping that call lets the old
+// session keep completing in the background and produces a duplicate
+// file. Only available in E2E mock mode; rejects otherwise.
+func (a *App) DebugSessionReleaseCount() (int, error) {
+	if a.driveAPIEndpointOverride == "" {
+		return 0, fmt.Errorf("debug: DebugSessionReleaseCount is only available in E2E mock mode")
+	}
+	resp, err := http.Get(a.driveAPIEndpointOverride + "/debug/session-release-count")
+	if err != nil {
+		return 0, fmt.Errorf("debug: query session release count: %w", err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Count int `json:"count"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return 0, fmt.Errorf("debug: decode session release count: %w", err)
+	}
+	return body.Count, nil
 }
