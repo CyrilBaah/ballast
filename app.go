@@ -725,14 +725,21 @@ func (a *App) UploadConfirmRestart(id int64) error {
 		return fmt.Errorf("upload: %s", reason)
 	}
 
-	if err := a.db.ResetUploadForRestart(id, info.Size(), info.ModTime()); err != nil {
-		return fmt.Errorf("upload: %w", err)
-	}
-
 	client, err := a.driveHTTPClient(a.ctx)
 	if err != nil {
 		return err
 	}
+	// Release the old session before abandoning it locally -- otherwise it
+	// can still complete independently on Drive's side later, leaving an
+	// orphaned duplicate file alongside the one the restarted upload creates.
+	if u.SessionURI != nil {
+		drive.ReleaseSession(a.ctx, client, *u.SessionURI)
+	}
+
+	if err := a.db.ResetUploadForRestart(id, info.Size(), info.ModTime()); err != nil {
+		return fmt.Errorf("upload: %w", err)
+	}
+
 	baseline := drive.IdentityBaseline{Size: info.Size(), Mtime: info.ModTime()}
 	resume := drive.ResumeState{ChunkSize: u.ChunkSizeBytes, ConsecutiveSuccesses: u.ConsecutiveChunkSuccesses}
 	a.startUpload(id, client, u.LocalPath, u.DriveFolderID, info.Size(), baseline, resume)
