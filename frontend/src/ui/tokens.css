@@ -1,0 +1,36 @@
+/* Warm paper design tokens for the Ballast preview UI, ported from the
+   Tether prototype (Ballast_Design_Brief.md's visual exploration). */
+:root {
+    /* ---- warm paper surfaces ---- */
+    --color-cream: #fbf6ef;
+    --color-paper: #ffffff;
+    --color-sand: #f6efe6;
+    --color-shell: #fffdfa;
+    --color-line: #ece1d4;
+    --color-line2: #f5ece1;
+
+    /* ---- ink ---- */
+    --color-ink: #241f1b;
+    --color-mute: #6f665f;
+    --color-faint: #a1978e;
+
+    /* ---- bright signal palette ---- */
+    --color-grass: #12a970;
+    --color-mint: #3fd9a4;
+    --color-sky: #3b82f6;
+    --color-azure: #7cc4ff;
+    --color-grape: #8b5cf6;
+    --color-lilac: #c4b0ff;
+    --color-tangerine: #f97316;
+    --color-butter: #fbbf24;
+    --color-coral: #f43f5e;
+    --color-blush: #ffb3c1;
+
+    --font-sans: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+        Georgia, ui-serif, serif;
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+    --radius-xl2: 20px;
+}
