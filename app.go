@@ -516,6 +516,14 @@ func (a *App) UploadStart(localPath, driveFolderId, driveFolderName string) (int
 		return 0, fmt.Errorf("upload: create upload record: %w", err)
 	}
 	if err := a.db.SetUploadInProgress(u.ID); err != nil {
+		// The row above already exists as "pending" -- pending is not a
+		// recoverable/non-terminal status (storage.nonTerminalStatuses), so
+		// leaving it as-is would strand it in History forever with no way
+		// to retry or dismiss it. Mark it failed so it's a clear, terminal
+		// row instead of a silent ghost.
+		if failErr := a.db.SetUploadFailed(u.ID, err.Error()); failErr != nil {
+			logging.Warn("failed to mark stranded upload as failed", "uploadId", u.ID, "error", failErr)
+		}
 		return 0, fmt.Errorf("upload: %w", err)
 	}
 
