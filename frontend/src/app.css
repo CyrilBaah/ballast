@@ -499,6 +499,10 @@
     text-align: right;
 }
 
+.history-row-cancel {
+    flex-shrink: 0;
+}
+
 /* --- Accessibility: visible keyboard focus (FR-007) -------------------- */
 
 a:focus-visible,

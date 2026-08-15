@@ -2,7 +2,7 @@
 // snapshot, then keeps rows current by subscribing to the same upload:*
 // events progress.ts already consumes (contracts/wails-bindings.md),
 // matching by id and prepending a row for any id not already known.
-import { ListRecent, type UploadListItem } from '../api/upload';
+import { ListRecent, Cancel, type UploadListItem } from '../api/upload';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 import { toPlainLanguage } from '../errors';
 import { formatBytes } from '../format';
@@ -59,7 +59,17 @@ function fileTypeToken(fileName: string): string {
     return FILE_TYPE_EXTENSIONS[ext] ?? '--filetype-generic';
 }
 
-function statusPresentation(item: UploadListItem): { label: string; stateClass: string } {
+// Percentage complete from the row's own bytesSent/totalBytes -- this is
+// persisted DB state (ListRecentUploads), not a live-event-only value, so
+// it's available immediately on load even for a row that's been paused
+// since before this screen was opened (the exact case that left a fully-
+// sent-but-unconfirmed upload looking identical to a freshly-stuck one).
+function percentLabel(bytesSent: number, totalBytes: number): string | null {
+    if (totalBytes <= 0) return null;
+    return `${Math.round((bytesSent / totalBytes) * 100)}%`;
+}
+
+function statusPresentation(item: UploadListItem, speedBytesPerSec?: number): { label: string; stateClass: string } {
     switch (item.status) {
         case 'succeeded':
             return { label: 'Succeeded', stateClass: 'state-success' };
@@ -68,18 +78,21 @@ function statusPresentation(item: UploadListItem): { label: string; stateClass: 
                 label: item.failureReason ? `Failed: ${toPlainLanguage(item.failureReason)}` : 'Failed',
                 stateClass: 'state-error',
             };
-        case 'paused':
-            return { label: 'Retrying…', stateClass: 'state-warning' };
+        case 'paused': {
+            const pct = percentLabel(item.bytesSent, item.totalBytes);
+            return { label: pct ? `${pct} sent — Retrying…` : 'Retrying…', stateClass: 'state-warning' };
+        }
         case 'awaiting_confirmation':
             return { label: 'Needs attention', stateClass: 'state-warning' };
-        case 'in_progress':
-            return {
-                label:
-                    item.totalBytes > 0
-                        ? `${formatBytes(item.bytesSent)} of ${formatBytes(item.totalBytes)}`
-                        : formatBytes(item.bytesSent),
-                stateClass: 'state-loading',
-            };
+        case 'in_progress': {
+            const pct = percentLabel(item.bytesSent, item.totalBytes);
+            const bytes =
+                item.totalBytes > 0
+                    ? `${formatBytes(item.bytesSent)} of ${formatBytes(item.totalBytes)}`
+                    : formatBytes(item.bytesSent);
+            const speed = speedBytesPerSec && speedBytesPerSec > 0 ? ` • ${formatBytes(speedBytesPerSec)}/s` : '';
+            return { label: `${pct ? `${pct} • ` : ''}${bytes}${speed}`, stateClass: 'state-loading' };
+        }
         case 'pending':
             return { label: 'Pending…', stateClass: 'state-loading' };
         case 'cancelled':
@@ -88,12 +101,42 @@ function statusPresentation(item: UploadListItem): { label: string; stateClass: 
     }
 }
 
+// Matches storage.SetUploadCancelled's allowed states on the backend
+// (paused or awaiting_confirmation) -- these are the only rows where
+// History can offer a Cancel action, since in_progress/pending/terminal
+// rows aren't cancellable there.
+const CANCELLABLE_STATUSES = new Set(['paused', 'awaiting_confirmation']);
+
 export function renderHistory(opts: HistoryScreenOptions): () => void {
     const { container } = opts;
 
     let disposed = false;
     const items = new Map<number, UploadListItem>();
     let order: number[] = []; // most-recent-first display order
+    const cancelling = new Set<number>(); // ids with an in-flight Cancel call
+
+    // Transfer speed is derived client-side from consecutive upload:progress
+    // events (the backend doesn't report it) -- lastSample holds the
+    // previous checkpoint per id so each new event can compute a delta;
+    // speeds holds the most recent computed rate for rendering.
+    const lastSample = new Map<number, { bytesSent: number; at: number }>();
+    const speeds = new Map<number, number>();
+
+    function recordSample(id: number, bytesSent: number): void {
+        const now = Date.now();
+        const prev = lastSample.get(id);
+        lastSample.set(id, { bytesSent, at: now });
+        if (!prev) return;
+        const dtSec = (now - prev.at) / 1000;
+        const deltaBytes = bytesSent - prev.bytesSent;
+        if (dtSec <= 0 || deltaBytes < 0) return;
+        speeds.set(id, deltaBytes / dtSec);
+    }
+
+    function clearSample(id: number): void {
+        lastSample.delete(id);
+        speeds.delete(id);
+    }
 
     container.innerHTML = `
         <div class="history-screen">
@@ -113,7 +156,8 @@ export function renderHistory(opts: HistoryScreenOptions): () => void {
     const listEl = container.querySelector<HTMLUListElement>('#history-list')!;
 
     function renderRow(item: UploadListItem): HTMLLIElement {
-        const { label, stateClass } = statusPresentation(item);
+        const isCancelling = cancelling.has(item.id);
+        const { label, stateClass } = statusPresentation(item, speeds.get(item.id));
         const li = document.createElement('li');
         li.className = 'history-row';
         li.dataset.id = String(item.id);
@@ -123,8 +167,25 @@ export function renderHistory(opts: HistoryScreenOptions): () => void {
                 <div class="history-row-name">${item.fileName}</div>
                 <div class="history-row-folder">${item.driveFolderName}</div>
             </div>
-            <div class="history-row-status ${stateClass}">${label}</div>
+            <div class="history-row-status ${stateClass}">${isCancelling ? 'Cancelling…' : label}</div>
         `;
+        // A paused/awaiting_confirmation row can sit indefinitely (FR-007
+        // retries have no cap) with no other way to stop it from History --
+        // give it the same Cancel affordance the progress screen already
+        // has, since storage.SetUploadCancelled accepts exactly these two
+        // statuses.
+        if (CANCELLABLE_STATUSES.has(item.status)) {
+            const cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.className = 'btn btn-secondary history-row-cancel';
+            cancelBtn.textContent = 'Cancel';
+            cancelBtn.disabled = isCancelling;
+            cancelBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                void handleCancel(item.id);
+            });
+            li.appendChild(cancelBtn);
+        }
         // Only a succeeded row with a Drive link is actually actionable --
         // a focusable row with nothing to activate is a keyboard-nav dead
         // end, so tabIndex/the click handler are added only here (FR-007).
@@ -182,7 +243,24 @@ export function renderHistory(opts: HistoryScreenOptions): () => void {
         renderList();
     }
 
+    async function handleCancel(id: number) {
+        if (cancelling.has(id)) return;
+        cancelling.add(id);
+        renderList();
+        try {
+            await Cancel(id);
+            cancelling.delete(id);
+            applyUpdate(id, { status: 'cancelled' });
+        } catch (err) {
+            cancelling.delete(id);
+            if (disposed) return;
+            console.error('Upload.Cancel failed', err);
+            renderList();
+        }
+    }
+
     const unsubProgress = EventsOn('upload:progress', (payload: UploadProgressPayload) => {
+        recordSample(payload.id, payload.bytesSent);
         applyUpdate(payload.id, {
             status: 'in_progress',
             bytesSent: payload.bytesSent,
@@ -190,18 +268,22 @@ export function renderHistory(opts: HistoryScreenOptions): () => void {
         });
     });
     const unsubPaused = EventsOn('upload:paused', (payload: UploadPausedPayload) => {
+        clearSample(payload.id);
         applyUpdate(payload.id, { status: 'paused' });
     });
     const unsubAwaitingConfirmation = EventsOn(
         'upload:awaiting-confirmation',
         (payload: UploadAwaitingConfirmationPayload) => {
+            clearSample(payload.id);
             applyUpdate(payload.id, { status: 'awaiting_confirmation' });
         },
     );
     const unsubComplete = EventsOn('upload:complete', (payload: UploadCompletePayload) => {
+        clearSample(payload.id);
         applyUpdate(payload.id, { status: 'succeeded', driveFileLink: payload.driveFileLink });
     });
     const unsubFailed = EventsOn('upload:failed', (payload: UploadFailedPayload) => {
+        clearSample(payload.id);
         applyUpdate(payload.id, { status: 'failed', failureReason: payload.reason });
     });
 
