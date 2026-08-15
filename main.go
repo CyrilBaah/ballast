@@ -15,15 +15,21 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:  "ballast",
-		Width:  1024,
-		Height: 768,
+		Title:     "ballast",
+		Width:     1280,
+		Height:    800,
+		MinWidth:  920,
+		MinHeight: 600,
+		Frameless: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
+		BackgroundColour: &options.RGBA{R: 251, G: 246, B: 239, A: 1},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
+		DragAndDrop: &options.DragAndDrop{
+			EnableFileDrop: true,
+		},
 		Bind: []interface{}{
 			app,
 		},
