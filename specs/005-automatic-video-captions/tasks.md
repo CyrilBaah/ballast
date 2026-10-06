@@ -39,10 +39,10 @@ test task before its implementation task and confirm it fails first.
 
 **Purpose**: Build tooling and test scaffolding every later phase needs.
 
-- [ ] T001 Create `scripts/build-engines.sh` (shared with Feature 006, which adds `llama-server` to it). For now it clones whisper.cpp at a pinned release tag (record the tag in the script) and builds `whisper-cli` for arm64 with `-DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON -DBUILD_SHARED_LIBS=OFF` into `build/engines/whisper-cli`. With `--bundle <path to Ballast.app>`, it copies every built engine into `Contents/MacOS/` (research.md §8). It exits with a clear message if `cmake` or Xcode command-line tools are missing.
-- [ ] T002 [P] Add `/build/engines/` to `.gitignore`.
-- [ ] T003 [P] Create the `internal/captions` package with a `doc.go` describing its job: extract audio, transcribe in pieces, merge to SRT, and hand the result to the worker (plan.md Structure).
-- [ ] T004 [P] Create a fake speech engine for tests in `internal/captions/testdata/fakewhisper/main.go`. It accepts the same flags `transcribe.go` will pass (`-m -f -l -osrt -of -pp -sns -t`), prints `progress = N%` lines, and writes a deterministic `.srt` for the given audio length. A `FAKEWHISPER_MODE` environment variable selects `ok`, `empty`, `repeat` (a 5× repeated cue), `crash`, or `hang`. Tests build it with `go build` into a temp folder.
+- [X] T001 Create `scripts/build-engines.sh` (shared with Feature 006, which adds `llama-server` to it). For now it clones whisper.cpp at a pinned release tag (record the tag in the script) and builds `whisper-cli` for arm64 with `-DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON -DBUILD_SHARED_LIBS=OFF` into `build/engines/whisper-cli`. With `--bundle <path to Ballast.app>`, it copies every built engine into `Contents/MacOS/` (research.md §8). It exits with a clear message if `cmake` or Xcode command-line tools are missing.
+- [X] T002 [P] Add `/build/engines/` to `.gitignore`.
+- [X] T003 [P] Create the `internal/captions` package with a `doc.go` describing its job: extract audio, transcribe in pieces, merge to SRT, and hand the result to the worker (plan.md Structure).
+- [X] T004 [P] Create a fake speech engine for tests in `internal/captions/testdata/fakewhisper/main.go`. It accepts the same flags `transcribe.go` will pass (`-m -f -l -osrt -of -pp -sns -t`), prints `progress = N%` lines, and writes a deterministic `.srt` for the given audio length. A `FAKEWHISPER_MODE` environment variable selects `ok`, `empty`, `repeat` (a 5× repeated cue), `crash`, or `hang`. Tests build it with `go build` into a temp folder.
 
 ---
 

@@ -54,3 +54,5 @@ Thumbs.db
 errors.md
 gg.json
 export
+# Speech/summary engines built by scripts/build-engines.sh
+/build/engines/
