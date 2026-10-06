@@ -218,8 +218,8 @@ already applies; a half-downloaded or tampered model is never run.
 
 **Decision**:
 - **Packaged app**: `whisper-cli` is copied into `Ballast.app/Contents/MacOS/`
-  by a build script (`scripts/build-whisper.sh`). The script builds the
-  pinned whisper.cpp tag for arm64 into `build/whisper/`, which is
+  by a build script (`scripts/build-engines.sh`). The script builds the
+  pinned whisper.cpp tag for arm64 into `build/engines/`, which is
   gitignored. The app's normal code-signing signs it along with
   everything else.
 - **Lookup at runtime**: first the `BALLAST_WHISPER_CLI` environment

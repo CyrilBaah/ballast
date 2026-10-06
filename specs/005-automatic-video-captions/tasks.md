@@ -39,8 +39,8 @@ test task before its implementation task and confirm it fails first.
 
 **Purpose**: Build tooling and test scaffolding every later phase needs.
 
-- [ ] T001 Create `scripts/build-whisper.sh`. It clones whisper.cpp at a pinned release tag (record the tag in the script) and builds `whisper-cli` for arm64 with `-DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON -DBUILD_SHARED_LIBS=OFF` into `build/whisper/whisper-cli`. With `--bundle <path to Ballast.app>`, it copies the binary into `Contents/MacOS/` (research.md §8). It exits with a clear message if `cmake` or Xcode command-line tools are missing.
-- [ ] T002 [P] Add `/build/whisper/` to `.gitignore`.
+- [ ] T001 Create `scripts/build-engines.sh` (shared with Feature 006, which adds `llama-server` to it). For now it clones whisper.cpp at a pinned release tag (record the tag in the script) and builds `whisper-cli` for arm64 with `-DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON -DBUILD_SHARED_LIBS=OFF` into `build/engines/whisper-cli`. With `--bundle <path to Ballast.app>`, it copies every built engine into `Contents/MacOS/` (research.md §8). It exits with a clear message if `cmake` or Xcode command-line tools are missing.
+- [ ] T002 [P] Add `/build/engines/` to `.gitignore`.
 - [ ] T003 [P] Create the `internal/captions` package with a `doc.go` describing its job: extract audio, transcribe in pieces, merge to SRT, and hand the result to the worker (plan.md Structure).
 - [ ] T004 [P] Create a fake speech engine for tests in `internal/captions/testdata/fakewhisper/main.go`. It accepts the same flags `transcribe.go` will pass (`-m -f -l -osrt -of -pp -sns -t`), prints `progress = N%` lines, and writes a deterministic `.srt` for the given audio length. A `FAKEWHISPER_MODE` environment variable selects `ok`, `empty`, `repeat` (a 5× repeated cue), `crash`, or `hang`. Tests build it with `go build` into a temp folder.
 
@@ -59,6 +59,7 @@ test task before its implementation task and confirm it fails first.
 - [ ] T009 Implement `internal/storage/caption.go`: a `CaptionJob` struct mirroring data-model.md, `CreateCaptionJob`, `GetCaptionJobByUpload`, `ListActiveCaptionJobs`, transition setters (`SetCaptionPhase`, `SetCaptionProgress`, `SetCaptionPieces`, `SetCaptionLocalCopy`, `SetCaptionDone`, `SetCaptionFailed`, `SetCaptionCancelled`) that set `updated_at`/`ended_at`, and the cascade in `internal/storage/upload.go`'s `DeleteUpload` (depends on T005, T008).
 - [ ] T010 [P] Write `internal/captions/formats_test.go` and implement `internal/captions/formats.go`: `Classify(path) (captionable bool, unsupportedExt string)`, case-insensitive. `.mp4/.mov/.m4v` are captionable; `.mkv .avi .webm .wmv .flv .mpg .mpeg .3gp` are unsupported video; anything else is not a video (research.md §10).
 - [ ] T011 [P] Write `internal/captions/engine_test.go` and implement `internal/captions/engine.go`, `engine_darwin_arm64.go`, and `engine_other.go`. `Availability() (ok bool, reason string, binPath string)` checks `BALLAST_WHISPER_CLI`, then the folder next to `os.Executable()`. On non-darwin/arm64 builds it always returns "Captions aren't available on this system yet". A missing binary returns "The speech engine is missing from this copy of Ballast" (research.md §8, §12; FR-017).
+- [ ] T011a [P] Create the shared `internal/heavywork` package (Feature 006 research.md §7): a single process-wide lock with `Acquire(ctx, owner string) (release func(), err error)` that waits until free or until ctx is cancelled, and `Holder() string` for status display. Write `internal/heavywork/heavywork_test.go`: only one holder at a time; a waiter gets it once released; a cancelled waiter returns `ctx.Err()` without acquiring.
 - [ ] T012 [P] Add event names `CaptionsConsentNeeded = "captions:consent-needed"` and `CaptionsUpdated = "captions:updated"`, plus emit helpers and payload structs matching `CaptionJobDTO`, to `internal/events/events.go` (contracts/wails-bindings.md).
 
 **Checkpoint**: Foundation ready. `go test ./internal/storage ./internal/captions` passes.
@@ -79,7 +80,7 @@ next to the local video, timings are within 1 s, and a second upload creates
 
 ### Tests for User Story 1 ⚠️ write first, confirm they fail
 
-- [ ] T013 [P] [US1] Write `internal/captions/model_test.go` with an `httptest` server: a full download is verified and renamed; an interrupted download resumes with a `Range` header from the `.part` size; a size or SHA-256 mismatch deletes the `.part` file and never produces the final file; a final-named file passes a size-only startup check; insufficient free disk space fails before downloading.
+- [ ] T013 [P] [US1] Write `internal/modelfetch/modelfetch_test.go` (the shared downloader also used by Feature 006, research.md §14 there) with an `httptest` server: a full download is verified and renamed; an interrupted download resumes with a `Range` header from the `.part` size; a size or SHA-256 mismatch deletes the `.part` file and never produces the final file; a final-named file passes a size-only startup check; insufficient free disk space fails before downloading.
 - [ ] T014 [P] [US1] Write `internal/captions/wav_test.go`: parse a 16 kHz mono 16-bit header; split a generated 25-minute WAV into pieces of about 10 minutes, each cut landing in the quietest 100 ms window within ±5 s of the mark (place silence at known offsets); piece start offsets are reported exactly; reads use a fixed buffer regardless of file length.
 - [ ] T015 [P] [US1] Write `internal/captions/srt_test.go`: parse an SRT; shift by a piece offset; merge pieces with continuous renumbering; collapse 3 or more consecutive identical cues into one spanning start-to-end; collapse a phrase repeated 3+ times within one cue (the measured 38:58 loop); an all-empty transcript reports "no speech"; output is valid SubRip (`HH:MM:SS,mmm --> HH:MM:SS,mmm`).
 - [ ] T016 [P] [US1] Write `internal/captions/localcopy_test.go`: saves `<video base>.srt` next to the video; an existing name gets `(2)`, `(3)`, …; an unwritable folder falls back to a given Downloads folder; an existing file is never overwritten (FR-022, FR-014).
@@ -94,7 +95,7 @@ next to the local video, timings are within 1 s, and a second upload creates
 
 ### Implementation for User Story 1
 
-- [ ] T019 [P] [US1] Implement `internal/captions/model.go`: pinned model URL (a Hugging Face `resolve/<revision>/ggml-large-v3-turbo.bin`), with size and SHA-256 constants recorded by doing one real download and hashing it (never made up). Also: `.part` resume via `Range`, verify then rename, size-only `ModelPresent()`, a disk-space precheck, retries using `drive.NewBackoffPolicy`, and a progress callback (research.md §2, §7; makes T013 pass).
+- [ ] T019 [P] [US1] Implement the generic downloader in `internal/modelfetch/modelfetch.go` (`Spec{URL, Size, SHA256, FileName}`, `Present(dir, spec)`, `Fetch(ctx, dir, spec, progress)`), and `internal/captions/model.go` holding only the speech model's `modelfetch.Spec`: pinned model URL (a Hugging Face `resolve/<revision>/ggml-large-v3-turbo.bin`), with size and SHA-256 constants recorded by doing one real download and hashing it (never made up). Also: `.part` resume via `Range`, verify then rename, size-only `ModelPresent()`, a disk-space precheck, retries using `drive.NewBackoffPolicy`, and a progress callback (research.md §2, §7; makes T013 pass).
 - [ ] T020 [P] [US1] Implement `internal/captions/extract.go`: run `/usr/bin/afconvert -f WAVE -d LEI16@16000 -c 1 <video> <out.wav>` under a context, lower its priority with `syscall.Setpriority` (nice 10) after start, and map the "Couldn't open input file" failure to "This video has no audio track" (research.md §3, §9).
 - [ ] T021 [P] [US1] Implement `internal/captions/wav.go`: header parsing, quiet-point splitting into piece WAV files in the job's work folder, and piece offsets (research.md §4; makes T014 pass).
 - [ ] T022 [P] [US1] Implement `internal/captions/srt.go`: parse, shift, merge, repeat collapse, and the "no speech" check (research.md §5; makes T015 pass).
@@ -106,6 +107,8 @@ next to the local video, timings are within 1 s, and a second upload creates
   - On finishing, failing, or cancelling, it deletes the work folder.
   - It emits throttled `captions:updated` events.
   - It exposes `Enqueue(uploadID)`, `VideoSucceeded(uploadID)`, `AnswerConsent(bool)`, and `Cancel(uploadID)`.
+  - It holds the `heavywork` lock (T011a) only while `whisper-cli` pieces run, not while downloading, extracting, or uploading, so Feature 006's summary model never runs alongside it.
+  - It calls optional hooks `OnTranscriptReady(uploadID, srtPath)` once the merged transcript is saved, and `OnNoTranscript(uploadID, reason)` when a job ends without one (failed, cancelled, or no speech). Feature 006 subscribes to these; with no subscriber they do nothing.
   - Makes T018 pass (depends on T009, T012, T019–T025).
 - [ ] T027 [US1] Wire captions into `app.go`:
   - Start the `captions.Worker` in `startup`.

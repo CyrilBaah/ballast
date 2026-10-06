@@ -10,8 +10,8 @@ repeating them.
 ## Prerequisites
 
 - An Apple-silicon Mac (research.md §12).
-- The speech engine built: `scripts/build-whisper.sh` (research.md §8),
-  then `export BALLAST_WHISPER_CLI=$PWD/build/whisper/whisper-cli` for
+- The speech engine built: `scripts/build-engines.sh` (research.md §8),
+  then `export BALLAST_WHISPER_CLI=$PWD/build/engines/whisper-cli` for
   `wails dev`.
 - A Google account and your own OAuth client (see README), signed in.
 - Test videos (made with Homebrew `ffmpeg`, which is a test tool only):

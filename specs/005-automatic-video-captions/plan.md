@@ -121,8 +121,8 @@ frontend/src/
 ├── ui/views/settings.ts         # + captions switch, language choice, notice / unavailable reason
 └── ui/views/transfers.ts        # + caption line, "Open captions in Drive"
 
-scripts/build-whisper.sh         # NEW: build pinned whisper.cpp → build/whisper/whisper-cli, copy into .app
-.gitignore                       # + /build/whisper/
+scripts/build-engines.sh         # NEW: build pinned whisper.cpp → build/engines/whisper-cli, copy into .app
+.gitignore                       # + /build/engines/
 ```
 
 **Structure Decision**: Keep the single Wails project. All captions logic
