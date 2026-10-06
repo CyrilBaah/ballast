@@ -52,6 +52,35 @@ cd frontend && npm ci && npx playwright install --with-deps chromium
 npm test                      # Playwright, against a running `wails dev` (BALLAST_E2E_MOCK=1 mocks Google/Drive)
 ```
 
+## Automatic captions
+
+On Apple-silicon Macs, Ballast makes a caption file (`.srt`) for every
+`.mp4`, `.mov`, or `.m4v` it uploads, entirely on the Mac, for free. It
+saves a copy next to the original video as soon as captions are ready, and
+puts one next to the video in Drive once the video has arrived. Captioning
+never slows or fails an upload. Intel Macs, Windows, and Linux say captions
+aren't available there yet. See `specs/005-automatic-video-captions/`.
+
+- **Speech engine**: [whisper.cpp](https://github.com/ggml-org/whisper.cpp)'s
+  `whisper-cli`, run as a helper program. For a packaged app, build it with
+  `scripts/build-engines.sh` (needs `brew install cmake` and the Xcode
+  command-line tools), then copy it into the app with
+  `scripts/build-engines.sh --bundle build/bin/Ballast.app`. For
+  `wails dev`, point Ballast at any `whisper-cli`, e.g. Homebrew's:
+
+  ```sh
+  brew install whisper-cpp
+  export BALLAST_WHISPER_CLI=/opt/homebrew/bin/whisper-cli
+  wails dev
+  ```
+
+- **Speech model**: `ggml-large-v3-turbo.bin` (about 1.6 GB), downloaded once
+  after the user agrees to a one-time prompt, verified by SHA-256, and kept
+  in `~/Library/Application Support/ballast/models/`.
+- **Work in progress**: each video's temporary audio and transcript live in
+  `~/Library/Application Support/ballast/captions/<job id>/` and are
+  deleted when its captions finish, fail, or are cancelled.
+
 ## Development Process
 
 This project is built solo, with AI coding agents, using

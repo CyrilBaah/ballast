@@ -207,9 +207,9 @@ Windows, and Linux.
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T047 [P] Update `README.md`: what captions do, Apple-silicon-only availability, `scripts/build-engines.sh`, `BALLAST_WHISPER_CLI` for `wails dev`, and where the model and work folders live.
-- [ ] T048 [P] Add the captions feature to the `[Unreleased]` section of `CHANGELOG.md`.
-- [ ] T049 [P] Logging audit: make sure no transcript text, SRT content, or model URL query string is logged anywhere in `internal/captions` or `app.go` (grep `logging.` calls). Logs carry only IDs, phases, counts, durations, and reasons (Constitution IV).
+- [X] T047 [P] Update `README.md`: what captions do, Apple-silicon-only availability, `scripts/build-engines.sh`, `BALLAST_WHISPER_CLI` for `wails dev`, and where the model and work folders live.
+- [X] T048 [P] Add the captions feature to the `[Unreleased]` section of `CHANGELOG.md`.
+- [X] T049 [P] Logging audit: make sure no transcript text, SRT content, or model URL query string is logged anywhere in `internal/captions` or `app.go` (grep `logging.` calls). Logs carry only IDs, phases, counts, durations, and reasons (Constitution IV).
 - [ ] T050 Run quickstart.md Scenarios 1–6 on the maintainer's Apple-silicon Mac with a real 3-hour sermon. Record transcription time against SC-003, peak memory at 10 minutes vs 2 hours (SC-006), upload time with captions off vs on (SC-004), and observations on music sections and Twi/Ga passages. If SC-003 fails on 8 GB, report it and propose the `large-v3-turbo-q8_0` fallback for the maintainer's decision (research.md §2) instead of switching silently.
 - [ ] T051 Final checks: `gofmt -l .`, `go vet ./...`, `go test ./...`, `cd frontend && npx tsc --noEmit`, and the Playwright suite against `wails dev` with `BALLAST_E2E_MOCK=1`, using a separate test account and data folder.
 

@@ -8,12 +8,26 @@ tagged releases yet, so entries are grouped by date.
 
 ### Added
 
+- Automatic captions for uploaded videos (`.mp4`, `.mov`, `.m4v`) on
+  Apple-silicon Macs. They are made on your own Mac for free, using a speech
+  model downloaded once after you agree.
+  - A caption file is saved next to the original video as soon as it's
+    ready, and one is placed next to the video in Drive once the video has
+    arrived. The video itself is uploaded untouched.
+  - Long videos are captioned in about 10-minute pieces, so memory stays
+    flat and a restart picks up where it left off.
+  - Captioning never slows or fails an upload. If captions can't be made,
+    Ballast says why.
+  - Settings has an on/off switch and an English/Automatic language choice.
 - Pick and upload several files at once.
 - Retry a cancelled upload, and delete finished, failed, or cancelled uploads
   from history.
 - Ballast now keeps a log file at `ballast.log` in its app data folder
   (`~/Library/Application Support/ballast/` on macOS), rotated once it passes
   10 MB, so problems with an upload can be traced after the fact.
+- Spec for automatic video summaries (`specs/006-video-summaries`): a free
+  summary of every video with speech, made on your own Mac from its
+  captions, with a message ready to share in a group chat.
 - Spec for automatic video captions (`specs/005-automatic-video-captions`):
   captions made on your own Mac and saved next to the video in Drive, without
   changing the video.
