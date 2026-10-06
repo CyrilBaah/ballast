@@ -38,8 +38,10 @@ tagged releases yet, so entries are grouped by date.
 
 - Signing out partway through an upload no longer fails it. The upload holds
   its place and continues from its last confirmed byte after you sign back in.
-- A brief problem refreshing your Google session is now retried instead of
-  being treated as a sign-out.
+- A brief problem refreshing your Google session (no internet, Google's
+  sign-in service briefly down) no longer signs you out, whether it happens
+  mid-upload, when Ballast opens, or before a Drive call. Only a sign-in
+  Google has actually revoked or expired asks you to sign in again.
 - When Drive drops an upload's session, Ballast restarts it from the beginning
   by itself once, instead of stopping to ask.
 

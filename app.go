@@ -177,6 +177,29 @@ func (a *App) oauthConfig() *oauth2pkg.Config {
 // errSignedOut is returned by Files/Drive/Upload methods when called without an active session.
 var errSignedOut = errors.New("not signed in")
 
+// errSessionUnusable marks a silent-refresh failure caused by the stored
+// tokens themselves (they can't be decrypted), as opposed to the network
+// or Google's token endpoint.
+var errSessionUnusable = errors.New("stored session can't be used")
+
+// refreshIsPermanent reports whether a failed silent refresh means the
+// stored Google session can never work again -- the grant was revoked or
+// expired, or the tokens can't be decrypted -- so the user has to sign in
+// again. Anything else (no internet, Google's token endpoint briefly
+// failing or rate-limiting) is temporary: signing the user out for it
+// would throw away a perfectly good session. The upload engine draws the
+// same line (drive.ClassifyTransportError).
+func refreshIsPermanent(err error) bool {
+	if errors.Is(err, errSessionUnusable) {
+		return true
+	}
+	var retrieve *oauth2pkg.RetrieveError
+	if errors.As(err, &retrieve) {
+		return drive.ClassifyTransportError(err).Bucket == drive.TerminalNeedsSignIn
+	}
+	return false
+}
+
 // --- Auth.* ----------------------------------------------------------------
 
 // AuthGetStatus returns the current session state, silently refreshing a
@@ -192,11 +215,16 @@ func (a *App) AuthGetStatus() events.AuthStatus {
 
 	if auth.NeedsRefresh(acct.AccessTokenExpiry) {
 		if err := a.silentlyRefresh(acct); err != nil {
-			logging.Warn("silent token refresh failed; clearing local session", "error", err)
-			_ = a.db.DeleteAccount()
-			status := events.AuthStatus{SignedIn: false}
-			events.EmitAuthChanged(a.ctx, status)
-			return status
+			if !refreshIsPermanent(err) {
+				// Keep the session: the next Drive call refreshes again.
+				logging.Warn("silent token refresh failed for now; keeping the session", "error", err)
+			} else {
+				logging.Warn("silent token refresh failed; clearing local session", "error", err)
+				_ = a.db.DeleteAccount()
+				status := events.AuthStatus{SignedIn: false}
+				events.EmitAuthChanged(a.ctx, status)
+				return status
+			}
 		}
 	}
 
@@ -315,7 +343,7 @@ func (a *App) silentlyRefresh(acct *storage.Account) error {
 	}
 	refreshPlain, err := storage.Decrypt(a.encKey, acct.RefreshTokenCiphertext, acct.RefreshTokenNonce)
 	if err != nil {
-		return fmt.Errorf("auth: decrypt refresh token: %w", err)
+		return fmt.Errorf("auth: decrypt refresh token: %w: %w", errSessionUnusable, err)
 	}
 
 	tok, err := auth.RefreshAccessToken(a.ctx, a.oauthConfig(), string(refreshPlain))
@@ -454,13 +482,17 @@ func (a *App) driveHTTPClient(ctx context.Context) (*http.Client, error) {
 
 	if auth.NeedsRefresh(acct.AccessTokenExpiry) {
 		if err := a.silentlyRefresh(acct); err != nil {
-			logging.Warn("silent token refresh failed before Drive call; clearing local session", "error", err)
-			_ = a.db.DeleteAccount()
-			events.EmitAuthChanged(a.ctx, events.AuthStatus{SignedIn: false})
-			return nil, errSignedOut
-		}
-		acct, err = a.db.GetAccount()
-		if err != nil {
+			if refreshIsPermanent(err) {
+				logging.Warn("silent token refresh failed before Drive call; clearing local session", "error", err)
+				_ = a.db.DeleteAccount()
+				events.EmitAuthChanged(a.ctx, events.AuthStatus{SignedIn: false})
+				return nil, errSignedOut
+			}
+			// Temporary: hand back a client with the stored tokens. Its
+			// token source refreshes again on first use, and the upload
+			// engine already retries a failed refresh as a network blip.
+			logging.Warn("silent token refresh failed for now; continuing with the stored session", "error", err)
+		} else if acct, err = a.db.GetAccount(); err != nil {
 			return nil, errSignedOut
 		}
 	}
