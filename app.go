@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"ballast/internal/auth"
+	"ballast/internal/captions"
 	"ballast/internal/drive"
 	"ballast/internal/events"
 	"ballast/internal/keychain"
@@ -45,6 +46,11 @@ type App struct {
 	// goroutines alike.
 	runningMu sync.Mutex
 	running   map[int64]*uploadRun
+
+	// captions turns uploaded videos into caption files (Feature 005);
+	// captionsStop stops its worker loop.
+	captions     *captions.Worker
+	captionsStop context.CancelFunc
 	// encKey encrypts token columns at rest and is loaded from the OS
 	// keychain at startup. It stays in memory only, never on disk.
 	encKey []byte
@@ -121,6 +127,7 @@ func (a *App) startup(ctx context.Context) {
 	} else {
 		a.db = db
 	}
+	a.startCaptions()
 
 	key, err := keychain.GetOrCreateKey()
 	if err != nil {
@@ -133,6 +140,9 @@ func (a *App) startup(ctx context.Context) {
 
 // shutdown is called when the app is closing.
 func (a *App) shutdown(ctx context.Context) {
+	if a.captionsStop != nil {
+		a.captionsStop()
+	}
 	if a.db != nil {
 		if err := a.db.Close(); err != nil {
 			logging.Warn("error closing database", "error", err)
@@ -509,6 +519,9 @@ type UploadListItemDTO struct {
 	DriveFileLink   string `json:"driveFileLink,omitempty"`
 	FailureReason   string `json:"failureReason,omitempty"`
 	StartedAt       string `json:"startedAt"`
+	// Caption is the upload's captioning state, absent when it has none
+	// (Feature 005 contracts/wails-bindings.md).
+	Caption *events.CaptionJob `json:"caption,omitempty"`
 }
 
 // UploadListRecent returns up to 50 uploads, most recent first, for the
@@ -545,6 +558,7 @@ func (a *App) UploadListRecent() ([]UploadListItemDTO, error) {
 		if u.FailureReason != nil {
 			item.FailureReason = *u.FailureReason
 		}
+		item.Caption = a.captionJobFor(u.ID)
 		items = append(items, item)
 	}
 	return items, nil
@@ -621,6 +635,7 @@ func (a *App) startNewUpload(localPath, driveFolderId, driveFolderName string) (
 
 	baseline := drive.IdentityBaseline{Size: info.Size(), Mtime: info.ModTime()}
 	a.startUpload(u.ID, client, localPath, driveFolderId, info.Size(), baseline, drive.ResumeState{})
+	a.enqueueCaptions(u.ID)
 
 	return u.ID, nil
 }
@@ -768,6 +783,7 @@ func (a *App) runUpload(ctx context.Context, run *uploadRun, id int64, client *h
 		return
 	}
 	events.EmitUploadComplete(a.ctx, id, result.WebViewLink)
+	a.captionsVideoSucceeded(id)
 }
 
 // stillTheSameFile reports whether u's source file on disk is still the
@@ -916,6 +932,7 @@ func (a *App) adoptLandedUpload(client *http.Client, u *storage.Upload) bool {
 	}
 	logging.Info("upload had already finished on Drive; keeping that file instead of re-sending", "uploadId", u.ID, "driveFileId", res.FileID)
 	events.EmitUploadComplete(a.ctx, u.ID, res.WebViewLink)
+	a.captionsVideoSucceeded(u.ID)
 	return true
 }
 
@@ -1178,6 +1195,10 @@ func (a *App) DebugRestart() error {
 		return fmt.Errorf("debug: DebugRestart is only available in E2E mock mode")
 	}
 	a.stopAllUploads()
+	if a.captionsStop != nil {
+		a.captionsStop()
+		a.captionsStop = nil
+	}
 	if a.db != nil {
 		if err := a.db.Close(); err != nil {
 			logging.Warn("error closing database during DebugRestart", "error", err)
@@ -1194,6 +1215,7 @@ func (a *App) DebugRestart() error {
 		return fmt.Errorf("debug: reopen database: %w", err)
 	}
 	a.db = db
+	a.startCaptions()
 
 	key, err := keychain.GetOrCreateKey()
 	if err != nil {

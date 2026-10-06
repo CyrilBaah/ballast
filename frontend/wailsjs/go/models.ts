@@ -53,11 +53,63 @@ export namespace events {
 	        this.pictureUrl = source["pictureUrl"];
 	    }
 	}
+	export class CaptionJob {
+	    uploadId: number;
+	    status: string;
+	    phase?: string;
+	    progressPercent: number;
+	    language: string;
+	    driveFileName?: string;
+	    driveFileLink?: string;
+	    localCopyPath?: string;
+	    note?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CaptionJob(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.uploadId = source["uploadId"];
+	        this.status = source["status"];
+	        this.phase = source["phase"];
+	        this.progressPercent = source["progressPercent"];
+	        this.language = source["language"];
+	        this.driveFileName = source["driveFileName"];
+	        this.driveFileLink = source["driveFileLink"];
+	        this.localCopyPath = source["localCopyPath"];
+	        this.note = source["note"];
+	    }
+	}
 
 }
 
 export namespace main {
 	
+	export class CaptionSettingsDTO {
+	    enabled: boolean;
+	    language: string;
+	    available: boolean;
+	    unavailableReason?: string;
+	    modelConsent: string;
+	    modelDownloaded: boolean;
+	    modelSizeBytes: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new CaptionSettingsDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.language = source["language"];
+	        this.available = source["available"];
+	        this.unavailableReason = source["unavailableReason"];
+	        this.modelConsent = source["modelConsent"];
+	        this.modelDownloaded = source["modelDownloaded"];
+	        this.modelSizeBytes = source["modelSizeBytes"];
+	    }
+	}
 	export class LocalFileRef {
 	    path: string;
 	    name: string;
@@ -108,6 +160,7 @@ export namespace main {
 	    driveFileLink?: string;
 	    failureReason?: string;
 	    startedAt: string;
+	    caption?: events.CaptionJob;
 	
 	    static createFrom(source: any = {}) {
 	        return new UploadListItemDTO(source);
@@ -124,7 +177,26 @@ export namespace main {
 	        this.driveFileLink = source["driveFileLink"];
 	        this.failureReason = source["failureReason"];
 	        this.startedAt = source["startedAt"];
+	        this.caption = this.convertValues(source["caption"], events.CaptionJob);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class UploadStatusDTO {
 	    status: string;

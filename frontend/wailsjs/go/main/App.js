@@ -14,6 +14,22 @@ export function AuthSignOut() {
   return window['go']['main']['App']['AuthSignOut']();
 }
 
+export function CaptionsAnswerModelDownload(arg1) {
+  return window['go']['main']['App']['CaptionsAnswerModelDownload'](arg1);
+}
+
+export function CaptionsGetJob(arg1) {
+  return window['go']['main']['App']['CaptionsGetJob'](arg1);
+}
+
+export function CaptionsGetSettings() {
+  return window['go']['main']['App']['CaptionsGetSettings']();
+}
+
+export function CaptionsShowLocalCopy(arg1) {
+  return window['go']['main']['App']['CaptionsShowLocalCopy'](arg1);
+}
+
 export function DebugRestart() {
   return window['go']['main']['App']['DebugRestart']();
 }

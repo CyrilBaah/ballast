@@ -110,14 +110,14 @@ next to the local video, timings are within 1 s, and a second upload creates
   - It holds the `heavywork` lock (T011a) only while `whisper-cli` pieces run, not while downloading, extracting, or uploading, so Feature 006's summary model never runs alongside it.
   - It calls optional hooks `OnTranscriptReady(uploadID, srtPath)` once the merged transcript is saved, and `OnNoTranscript(uploadID, reason)` when a job ends without one (failed, cancelled, or no speech). Feature 006 subscribes to these; with no subscriber they do nothing.
   - Makes T018 pass (depends on T009, T012, T019–T025).
-- [ ] T027 [US1] Wire captions into `app.go`:
+- [X] T027 [US1] Wire captions into `app.go`:
   - Start the `captions.Worker` in `startup`.
   - In `startNewUpload` (used by `UploadStart`/`UploadRetry`), create the CaptionJob when the file is captionable, `CaptionsEnabled()`, and `Availability()` is ok, with `language` copied from settings. For unsupported extensions, create it straight into `failed` ("Captions aren't supported for .mkv files yet").
   - Call `worker.VideoSucceeded` after `SetUploadSucceeded` in `runUpload` and in `adoptLandedUpload`.
   - Add the bound methods `CaptionsGetSettings`, `CaptionsAnswerModelDownload`, `CaptionsGetJob`, and `CaptionsShowLocalCopy` (`open -R <path>`).
   - Add the optional `caption` field to `UploadListItemDTO` in `UploadListRecent`.
   - Follow contracts/wails-bindings.md exactly. The upload itself must not wait on anything captions-related (FR-006).
-- [ ] T028 [US1] Regenerate the Wails bindings (`wails generate module`) so `frontend/wailsjs/go/main/App.d.ts`/`App.js` and the models include the new methods and DTOs.
+- [X] T028 [US1] Regenerate the Wails bindings (`wails generate module`) so `frontend/wailsjs/go/main/App.d.ts`/`App.js` and the models include the new methods and DTOs.
 - [ ] T029 [P] [US1] Create `frontend/src/api/captions.ts`, wrapping the new bindings and typing `CaptionSettingsDTO` and `CaptionJobDTO`.
 - [ ] T030 [US1] Extend `frontend/src/ui/live.ts`: keep caption state per upload (from `UploadListRecent`'s `caption` and `captions:updated` events), and on `captions:consent-needed` open the consent prompt.
 - [ ] T031 [US1] Add to `frontend/src/ui/components.ts`:
