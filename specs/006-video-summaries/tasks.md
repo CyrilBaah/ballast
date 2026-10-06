@@ -32,9 +32,9 @@ description: "Task list for Automatic Video Summaries"
 
 ## Phase 1: Setup and model choice
 
-- [ ] T001 Extend `scripts/build-engines.sh` to also build llama.cpp's `llama-server` from a pinned release tag (record it), as a static arm64 binary with Metal (`-DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF`), into `build/engines/llama-server`, and copy it into the app bundle with `--bundle` (research.md §15).
+- [X] T001 Extend `scripts/build-engines.sh` to also build llama.cpp's `llama-server` from a pinned release tag (record it), as a static arm64 binary with Metal (`-DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF`), into `build/engines/llama-server`, and copy it into the app bundle with `--bundle` (research.md §15).
 - [ ] T002 [P] Create the `internal/summaries` package with `doc.go`, and a fake llama-server for tests: an `httptest` server speaking `/health` and `/v1/chat/completions`, returning scripted JSON per request, recording each request body, and able to return invalid JSON, hang, or 500 on demand (`internal/summaries/fake_server_test.go`).
-- [ ] T003 [P] Add the reference summaries to `internal/summaries/testdata/`:
+- [X] T003 [P] Add the reference summaries to `internal/summaries/testdata/`: *(Kept in git-ignored `testdata/private/`: the sermon and the documentary narration aren't ours to publish in a public repo. Unit tests use short made-up transcripts instead.)*
   - `reference-sermon-2026-10-04.md`: the summary shared to the church group on 2026-10-06;
   - `transcript-sermon-2026-10-04.srt`: the real 43-minute transcript;
   - `transcript-aksum.srt`: Feature 005's real output for `Aksum.mp4`;
@@ -49,10 +49,10 @@ description: "Task list for Automatic Video Summaries"
 
 ## Phase 2: Foundational (blocks all stories)
 
-- [ ] T005 Add the `summary_job` table to `internal/storage/schema.go` per data-model.md: `upload_id UNIQUE REFERENCES upload(id) ON DELETE CASCADE`, CHECK constraints on `status`/`phase`/`engine`.
-- [ ] T006 [P] Write `internal/storage/summary_test.go`, mirroring `caption_test.go`: create/one-per-upload; validation (ended means no phase; failed needs a note; drive id and link set together); transitions only while active; `parts_done <= part_count`; `attempts`; `ListActiveSummaryJobs`; cascade delete with the upload.
-- [ ] T007 Implement `internal/storage/summary.go` (`SummaryJob`, statuses and phases from data-model.md, CRUD, transitions, `ResetSummaryForRetry` which sets attempts to 0 and returns to `waiting_for_engine`) to make T006 pass.
-- [ ] T008 [P] Add `summaries_enabled` (default `true`) and `summary_model_consent` (default `unasked`) with typed helpers to `internal/storage/setting.go`, with tests in `setting_test.go`.
+- [X] T005 Add the `summary_job` table to `internal/storage/schema.go` per data-model.md: `upload_id UNIQUE REFERENCES upload(id) ON DELETE CASCADE`, CHECK constraints on `status`/`phase`/`engine`.
+- [X] T006 [P] Write `internal/storage/summary_test.go`, mirroring `caption_test.go`: create/one-per-upload; validation (ended means no phase; failed needs a note; drive id and link set together); transitions only while active; `parts_done <= part_count`; `attempts`; `ListActiveSummaryJobs`; cascade delete with the upload.
+- [X] T007 Implement `internal/storage/summary.go` (`SummaryJob`, statuses and phases from data-model.md, CRUD, transitions, `ResetSummaryForRetry` which sets attempts to 0 and returns to `waiting_for_engine`) to make T006 pass.
+- [X] T008 [P] Add `summaries_enabled` (default `true`) and `summary_model_consent` (default `unasked`) with typed helpers to `internal/storage/setting.go`, with tests in `setting_test.go`.
 - [ ] T009 [P] Add `SummariesConsentNeeded = "summaries:consent-needed"`, `SummariesUpdated = "summaries:updated"`, a `SummaryJob` payload matching `SummaryJobDTO`, and emit helpers to `internal/events/events.go`.
 - [ ] T010 [P] Write `internal/summaries/engine_test.go` and implement `engine.go` plus the platform files. `Availability()` finds `llama-server` via `BALLAST_LLAMA_SERVER` or next to the executable, is unavailable on anything but darwin/arm64, and also requires captions to be available ("Summaries need captions, which aren't available on this system yet").
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds the helper programs Ballast runs as child processes -- the
-# speech-to-text engine for captions (Feature 005) -- as static arm64
+# speech-to-text engine for captions (Feature 005) and the language-model
+# server for summaries (Feature 006) -- as static arm64
 # binaries with Metal, into build/engines/. With --bundle <Ballast.app>,
 # also copies them into the app bundle next to Ballast's own executable,
 # where the app looks for them at runtime (research.md §8).
@@ -12,6 +13,7 @@ set -euo pipefail
 
 # Pinned so a rebuild always produces the same engine. Bump deliberately.
 WHISPER_CPP_TAG="v1.9.4"
+LLAMA_CPP_TAG="b11429" # = llama.cpp v0.6.0, commit d8123504
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/build/engines"
@@ -53,7 +55,26 @@ build_whisper() {
 	echo "Built $OUT/whisper-cli ($WHISPER_CPP_TAG)"
 }
 
+build_llama() {
+	local dir="$SRC/llama.cpp"
+	if [[ ! -d "$dir" ]]; then
+		git clone --depth 1 --branch "$LLAMA_CPP_TAG" https://github.com/ggml-org/llama.cpp.git "$dir"
+	fi
+	cmake -S "$dir" -B "$dir/build" \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_OSX_ARCHITECTURES=arm64 \
+		-DGGML_METAL=ON \
+		-DGGML_METAL_EMBED_LIBRARY=ON \
+		-DBUILD_SHARED_LIBS=OFF \
+		-DLLAMA_CURL=OFF \
+		-DLLAMA_BUILD_TESTS=OFF
+	cmake --build "$dir/build" --config Release --target llama-server -j
+	cp "$dir/build/bin/llama-server" "$OUT/llama-server"
+	echo "Built $OUT/llama-server ($LLAMA_CPP_TAG)"
+}
+
 build_whisper
+build_llama
 
 if [[ -n "$bundle" ]]; then
 	dest="$bundle/Contents/MacOS"
@@ -62,5 +83,6 @@ if [[ -n "$bundle" ]]; then
 		exit 1
 	fi
 	cp "$OUT/whisper-cli" "$dest/whisper-cli"
+	cp "$OUT/llama-server" "$dest/llama-server"
 	echo "Copied engines into $dest"
 fi

@@ -56,3 +56,7 @@ gg.json
 export
 # Speech/summary engines built by scripts/build-engines.sh
 /build/engines/
+
+# Real transcripts and reference summaries used to choose the summary model
+# (Feature 006 research.md §2). Not ours to publish.
+/internal/summaries/testdata/private/

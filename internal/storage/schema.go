@@ -83,7 +83,33 @@ CREATE TABLE IF NOT EXISTS setting (
 );
 `
 
-const schema = schemaAccountTable + schemaUploadTable + schemaCaptionTables
+// schemaSummaryTable is Feature 006's table (its data-model.md): one
+// summary_job per upload, removed with it.
+const schemaSummaryTable = `
+CREATE TABLE IF NOT EXISTS summary_job (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	upload_id INTEGER NOT NULL UNIQUE REFERENCES upload(id) ON DELETE CASCADE,
+	status TEXT NOT NULL CHECK (status IN ('waiting', 'in_progress', 'done', 'failed', 'cancelled')),
+	phase TEXT CHECK (phase IN ('waiting_for_captions', 'awaiting_consent', 'downloading_model', 'waiting_for_engine', 'summarising', 'waiting_for_video', 'uploading_summary') OR phase IS NULL),
+	engine TEXT NOT NULL CHECK (engine IN ('local')),
+	model TEXT NOT NULL,
+	part_count INTEGER,
+	parts_done INTEGER NOT NULL DEFAULT 0,
+	progress_percent INTEGER NOT NULL DEFAULT 0,
+	attempts INTEGER NOT NULL DEFAULT 0,
+	unverified_quotes INTEGER NOT NULL DEFAULT 0,
+	local_copy_path TEXT,
+	drive_file_id TEXT,
+	drive_file_link TEXT,
+	drive_file_name TEXT,
+	note TEXT,
+	created_at DATETIME NOT NULL,
+	updated_at DATETIME NOT NULL,
+	ended_at DATETIME
+);
+`
+
+const schema = schemaAccountTable + schemaUploadTable + schemaCaptionTables + schemaSummaryTable
 
 // ensureSchema creates the account/upload tables if they don't already
 // exist, then upgrades an existing pre-Feature-002 or pre-Feature-003
