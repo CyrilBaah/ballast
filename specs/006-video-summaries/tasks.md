@@ -88,7 +88,7 @@ description: "Task list for Automatic Video Summaries"
   - a short transcript makes a single request;
   - a long one makes N part requests and one combine request;
   - a schema-valid but semantically empty answer counts as unusable.
-- [ ] T016 [P] [US1] `internal/drive/summarydoc_test.go`, with a fake Drive like `captionfile_test.go`:
+- [X] T016 [P] [US1] `internal/drive/summarydoc_test.go`, with a fake Drive like `captionfile_test.go`:
   - find by `ballastSummaryFor` tag;
   - free name `Sermon — Summary`, then `Sermon — Summary (2)`;
   - create with `mimeType: application/vnd.google-apps.document`, HTML media, and the tag.
@@ -114,7 +114,7 @@ description: "Task list for Automatic Video Summaries"
   - `localSummarizer` runs a single pass, or parts then combine, through `/v1/chat/completions` with `json_schema`;
   - makes T015 pass.
 - [ ] T025 [US1] `internal/summaries/model.go`: the pinned `modelfetch.Spec` from T004. Until T004 is approved it holds an obviously unset placeholder that makes `Availability()` report "The summary model hasn't been chosen yet".
-- [ ] T026 [P] [US1] `internal/drive/summarydoc.go` (makes T016 pass).
+- [X] T026 [P] [US1] `internal/drive/summarydoc.go` (makes T016 pass).
 - [ ] T027 [US1] `internal/summaries/worker.go`:
   - mirrors `internal/captions/worker.go`: one job at a time, the consent gate, the shared `modelfetch` download (with its own fetch lock), `heavywork.Acquire` around the server's lifetime, `parts_done` checkpoints, verify, share-message rules, render, local `.md` via a shared free-name helper, wait for the video, adopt-or-create the Google Doc, and cleanup;
   - exposes `Enqueue(uploadID)`, `TranscriptReady(uploadID, srtPath)` (which copies the transcript into the job folder), `NoTranscript(uploadID, reason)`, `VideoSucceeded`, `AnswerConsent`, `Cancel`, `Retry`;
