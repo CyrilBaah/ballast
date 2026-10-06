@@ -1,10 +1,10 @@
-// File picker — picks a local file via the native OS dialog (Files.PickLocal
-// only supports single-select), then lets the user browse real Drive
-// folders (Drive.ListFolders) as the upload destination before starting.
-// The mock version's virtual "SD card / SSD / laptop" filesystem browser is
-// gone -- there's no real API that could back it, and Wails' native picker
-// is a system dialog, not something this UI can render a custom browser
-// inside of.
+// File picker — picks one or more local files via the native OS dialog
+// (Files.PickLocalMultiple), then lets the user browse real Drive folders
+// (Drive.ListFolders) as one shared upload destination for the whole batch
+// before starting. The mock version's virtual "SD card / SSD / laptop"
+// filesystem browser is gone -- there's no real API that could back it, and
+// Wails' native picker is a system dialog, not something this UI can render
+// a custom browser inside of.
 
 import { icon, kindIcon, button } from '../components';
 import { formatBytes } from '../format';
@@ -21,18 +21,18 @@ const ROOT: BreadcrumbEntry = { id: '', name: 'My Drive' };
 
 export function openFilePicker(opts: { onClose: () => void; onStarted: () => void }): void {
     void live
-        .pickFile()
-        .then((file) => {
-            if (!file) {
+        .pickFiles()
+        .then((files) => {
+            if (!files.length) {
                 opts.onClose(); // user cancelled the native dialog
                 return;
             }
-            renderDestinationModal(file, opts);
+            renderDestinationModal(files, opts);
         })
         .catch(() => opts.onClose());
 }
 
-function renderDestinationModal(file: LocalFileRef, opts: { onClose: () => void; onStarted: () => void }): void {
+function renderDestinationModal(files: LocalFileRef[], opts: { onClose: () => void; onStarted: () => void }): void {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     document.body.appendChild(overlay);
@@ -42,9 +42,8 @@ function renderDestinationModal(file: LocalFileRef, opts: { onClose: () => void;
     let selectedFolder: BreadcrumbEntry = ROOT;
     let loadingFolders = false;
     let folderError = '';
-    let starting = false;
-    let startError = '';
     let disposed = false;
+    const totalBytes = files.reduce((sum, f) => sum + f.sizeBytes, 0);
 
     function close() {
         overlay.remove();
@@ -116,18 +115,22 @@ function renderDestinationModal(file: LocalFileRef, opts: { onClose: () => void;
                     <aside class="picker-tray">
                         <div class="picker-tray-head">
                             <p class="picker-side-label">Selected</p>
-                            <p class="display tnum picker-tray-total">${formatBytes(file.sizeBytes)}</p>
-                            <p style="margin:2px 0 0;font-size:12px;color:var(--color-mute)">1 file</p>
+                            <p class="display tnum picker-tray-total">${formatBytes(totalBytes)}</p>
+                            <p style="margin:2px 0 0;font-size:12px;color:var(--color-mute)">${files.length} file${files.length === 1 ? '' : 's'}</p>
                         </div>
 
                         <div class="scroll picker-tray-list">
-                            <div class="picker-tray-item">
+                            ${files
+                                .map(
+                                    (file) => `<div class="picker-tray-item">
                                 <span class="picker-file-icon tone-grass" style="flex-shrink:0">${kindIcon(live.fileKind(file.name), 'icon')}</span>
                                 <span style="min-width:0;flex:1">
                                     <span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:500">${file.name}</span>
                                     <span class="tnum" style="display:block;font-size:10.5px;color:var(--color-faint)">${formatBytes(file.sizeBytes)}</span>
                                 </span>
-                            </div>
+                            </div>`,
+                                )
+                                .join('')}
                         </div>
 
                         <div class="picker-tray-footer">
@@ -137,12 +140,10 @@ function renderDestinationModal(file: LocalFileRef, opts: { onClose: () => void;
                                 <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;font-weight:500">${selectedFolder.name}</span>
                             </div>
 
-                            ${startError ? `<p class="state-error" style="margin-top:10px;font-size:11.5px">${startError}</p>` : ''}
-
                             ${button(`${icon.bolt()} Start upload`, {
                                 variant: 'primary',
                                 className: 'picker-start-btn',
-                                attrs: `id="picker-start" ${starting ? 'disabled' : ''}`,
+                                attrs: `id="picker-start"`,
                             })}
                         </div>
                     </aside>
@@ -170,21 +171,9 @@ function renderDestinationModal(file: LocalFileRef, opts: { onClose: () => void;
             });
         });
         overlay.querySelector('#picker-start')?.addEventListener('click', () => {
-            if (starting) return;
-            starting = true;
-            startError = '';
-            renderAll();
-            void live.startUpload(file, selectedFolder).then((result) => {
-                if (disposed) return;
-                if (result.ok) {
-                    close();
-                    opts.onStarted();
-                } else {
-                    starting = false;
-                    startError = toPlainLanguage(result.error ?? 'Something went wrong. Please try again.');
-                    renderAll();
-                }
-            });
+            live.enqueueUploads(files, selectedFolder);
+            close();
+            opts.onStarted();
         });
     }
 

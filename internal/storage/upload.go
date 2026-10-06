@@ -78,6 +78,12 @@ var ErrUploadNotAwaitingConfirmation = errors.New("storage: upload is not awaiti
 // target upload isn't currently paused or awaiting_confirmation (FR-014).
 var ErrUploadNotCancellable = errors.New("storage: upload is not in a cancellable state")
 
+// ErrUploadNotDeletable is returned by DeleteUpload when the target
+// upload isn't in a terminal state -- deleting a still-active row would
+// silently orphan its in-flight goroutine and leave the single-active
+// gate believing an upload exists that History no longer shows.
+var ErrUploadNotDeletable = errors.New("storage: upload is not in a deletable state")
+
 // CreateUpload inserts a new Upload row in the pending state, capturing
 // localMtime alongside localSizeBytes as the source-file-identity check's
 // cheap-check baseline (data-model.md, research.md §5). driveFolderName is
@@ -246,6 +252,29 @@ func (d *DB) SetUploadCancelled(id int64) error {
 			return getErr
 		}
 		return ErrUploadNotCancellable
+	}
+	return nil
+}
+
+// DeleteUpload permanently removes a terminal (succeeded, failed, or
+// cancelled) Upload row from history. Rejects with ErrUploadNotDeletable
+// for pending/in_progress/paused/awaiting_confirmation rows.
+func (d *DB) DeleteUpload(id int64) error {
+	res, err := d.conn.Exec(`
+		DELETE FROM upload WHERE id = ? AND status IN (?, ?, ?)
+	`, id, string(UploadSucceeded), string(UploadFailed), string(UploadCancelled))
+	if err != nil {
+		return fmt.Errorf("storage: delete upload: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("storage: check rows affected: %w", err)
+	}
+	if n == 0 {
+		if _, getErr := d.GetUpload(id); getErr != nil {
+			return getErr
+		}
+		return ErrUploadNotDeletable
 	}
 	return nil
 }

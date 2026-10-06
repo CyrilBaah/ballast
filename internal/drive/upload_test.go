@@ -2,12 +2,16 @@ package drive
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/oauth2"
 )
 
 // noopSleep replaces the real backoff delay with an instant, ctx-aware
@@ -164,6 +168,58 @@ func TestUploadFileResumesFromPersistedCheckpoint(t *testing.T) {
 	// already accounted for `firstLeg` bytes separately).
 	if srv.totalWireBytes() != int64(size) {
 		t.Fatalf("total wire bytes = %d, want exactly %d (no re-transmission of the primed prefix)", srv.totalWireBytes(), size)
+	}
+}
+
+// TestUploadFileRetriesQueryOffsetWhenDriveReportsNotDoneYet covers the
+// crash-window race described in UploadFile's post-loop QueryOffset block:
+// a checkpoint resumed at bytesSent == totalBytes must not be declared
+// permanently failed just because Drive's status query doesn't
+// immediately confirm completion. It should retry like any other
+// retryable condition (FR-007) until Drive actually has all the bytes,
+// not fail on the very first check.
+func TestUploadFileRetriesQueryOffsetWhenDriveReportsNotDoneYet(t *testing.T) {
+	noopSleep(t)
+	srv := newFakeResumableServer()
+	defer srv.Close()
+
+	size := int64(2048)
+	short := size - 100
+	path, data := makeTestFile(t, size)
+
+	uri, derr, terr := InitiateSession(context.Background(), srv.Client(), srv.URL, "upload-me.bin", "folder-1", size)
+	if terr != nil || derr != nil {
+		t.Fatalf("InitiateSession: terr=%v derr=%v", terr, derr)
+	}
+	// Prime the session to `short` bytes so Drive's own offset query
+	// genuinely disagrees with the checkpoint below (bytesSent=size) --
+	// exactly the state a checkpoint persisted right after the final
+	// chunk's ack, but before UploadFile observed Done, followed by a real
+	// crash and process restart, would leave behind.
+	if _, derr, terr := SendChunk(context.Background(), srv.Client(), uri, data[:short], 0, size); terr != nil || derr != nil {
+		t.Fatalf("priming SendChunk: terr=%v derr=%v", terr, derr)
+	}
+
+	var pausedCount int
+	cb := UploadCallbacks{OnPaused: func() { pausedCount++ }}
+
+	// Drive "catches up" a moment later -- simulates the offset query
+	// eventually reflecting the chunk it had actually already received.
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		_, _, _ = SendChunk(context.Background(), srv.Client(), uri, data[short:], short, size)
+	}()
+
+	resume := ResumeState{SessionURI: uri, BytesSent: size}
+	result, err := UploadFile(context.Background(), srv.Client(), srv.URL, 1, path, "folder-1", size, statBaseline(t, path), resume, cb)
+	if err != nil {
+		t.Fatalf("UploadFile: %v", err)
+	}
+	if result.FileID != "fake-file-id" {
+		t.Fatalf("FileID = %q, want fake-file-id", result.FileID)
+	}
+	if pausedCount == 0 {
+		t.Fatal("expected OnPaused to fire while waiting for Drive to confirm completion, not fail outright")
 	}
 }
 
@@ -520,5 +576,97 @@ func TestUploadFileFailsNotRecoverableWhenSourceFileDeletedDuringPause(t *testin
 	}
 	if outcome.Bucket != TerminalNotRecoverable {
 		t.Fatalf("bucket = %v, want TerminalNotRecoverable", outcome.Bucket)
+	}
+}
+
+// deadGrantTransport passes requests through to rt until failAfter chunk
+// PUTs have gone by, then fails every later one the way an oauth2-wrapped
+// client does once its refresh token has been revoked: with an
+// *oauth2.RetrieveError surfaced from client.Do, not an HTTP response.
+// Safe without a mutex -- UploadFile sends chunks strictly one at a time.
+type deadGrantTransport struct {
+	rt        http.RoundTripper
+	failAfter int
+	puts      int
+}
+
+func (d *deadGrantTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method == http.MethodPut {
+		d.puts++
+		if d.puts > d.failAfter {
+			return nil, fmt.Errorf("Put %q: %w", req.URL.String(), &oauth2.RetrieveError{
+				ErrorCode: "invalid_grant",
+				Response:  &http.Response{StatusCode: http.StatusBadRequest},
+			})
+		}
+	}
+	return d.rt.RoundTrip(req)
+}
+
+// TestUploadFileParksOnDeadGrantThenContinuesAfterSignIn is the guarantee
+// a user cares about when their Google session dies partway through a
+// multi-gigabyte transfer: the acknowledged bytes stay acknowledged, and
+// signing back in continues from that exact offset instead of starting
+// the file over. The first leg dies on a revoked grant (parked, not
+// failed, with its checkpoint intact); the second leg resumes from that
+// checkpoint on a fresh client, exactly as UploadGetRecoverable does after
+// a sign-in, and finishes without re-sending a single acknowledged byte.
+func TestUploadFileParksOnDeadGrantThenContinuesAfterSignIn(t *testing.T) {
+	noopSleep(t)
+	srv := newFakeResumableServer()
+	defer srv.Close()
+
+	size := 2 * BaselineChunkSize
+	path, data := makeTestFile(t, int64(size))
+
+	healthy := srv.Client()
+	dying := &http.Client{Transport: &deadGrantTransport{rt: healthy.Transport, failAfter: 1}}
+
+	var lastBytesSent, lastChunkSize int64
+	var lastURI string
+	var lastHashState []byte
+	var lastSuccesses int
+	cb := UploadCallbacks{
+		OnChunkAcked: func(bytesSent int64, sessionURI string, hashState []byte, chunkSize int64, consecutiveSuccesses int) {
+			lastBytesSent, lastURI, lastHashState = bytesSent, sessionURI, hashState
+			lastChunkSize, lastSuccesses = chunkSize, consecutiveSuccesses
+		},
+	}
+
+	_, err := UploadFile(context.Background(), dying, srv.URL, 1, path, "folder-1", int64(size), statBaseline(t, path), ResumeState{}, cb)
+	if err == nil {
+		t.Fatal("expected UploadFile to stop once the refresh token was revoked")
+	}
+	var outcome *TerminalOutcome
+	if !asOutcome(err, &outcome) {
+		t.Fatalf("error = %v, want a *TerminalOutcome", err)
+	}
+	if outcome.Bucket != TerminalNeedsSignIn {
+		t.Fatalf("bucket = %v, want TerminalNeedsSignIn (a parked transfer, not a failed one)", outcome.Bucket)
+	}
+	if lastBytesSent != int64(BaselineChunkSize) || lastURI == "" {
+		t.Fatalf("checkpoint = %d bytes, uri %q; want the first chunk's %d bytes and a session URI to resume against", lastBytesSent, lastURI, BaselineChunkSize)
+	}
+
+	// Second leg: a fresh, signed-in client picks the parked checkpoint up.
+	resume := ResumeState{
+		SessionURI:           lastURI,
+		BytesSent:            lastBytesSent,
+		ContentHashState:     lastHashState,
+		ChunkSize:            lastChunkSize,
+		ConsecutiveSuccesses: lastSuccesses,
+	}
+	result, err := UploadFile(context.Background(), healthy, srv.URL, 1, path, "folder-1", int64(size), statBaseline(t, path), resume, cb)
+	if err != nil {
+		t.Fatalf("resumed UploadFile: %v", err)
+	}
+	if result.FileID == "" {
+		t.Fatal("expected the resumed upload to complete")
+	}
+	if got := srv.receivedContent(); string(got) != string(data) {
+		t.Fatal("resumed upload's final content is not byte-identical to the source file")
+	}
+	if srv.totalWireBytes() != int64(size) {
+		t.Fatalf("total wire bytes = %d, want exactly %d -- the parked prefix must not be re-sent", srv.totalWireBytes(), size)
 	}
 }

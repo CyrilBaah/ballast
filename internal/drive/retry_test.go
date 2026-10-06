@@ -3,6 +3,7 @@ package drive
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -16,19 +17,87 @@ func TestClassifyTransportErrorIsRetryableForGenericNetworkFailure(t *testing.T)
 	}
 }
 
-// TestClassifyTransportErrorTreatsRevokedRefreshTokenAsTerminal covers
+// TestClassifyTransportErrorTreatsRevokedRefreshTokenAsNeedsSignIn covers
 // research.md §4's "permission revoked" row: the oauth2-wrapped HTTP
 // client refreshes the access token transparently before each request, so
 // a revoked refresh token surfaces as an *oauth2.RetrieveError from
 // client.Do, not an HTTP response -- this must stop retrying, not loop
-// forever like a genuine dropped connection.
-func TestClassifyTransportErrorTreatsRevokedRefreshTokenAsTerminal(t *testing.T) {
+// forever like a genuine dropped connection. It is not a *failure* though:
+// the bytes Drive already acknowledged are still good, so it parks the
+// transfer for a sign-in rather than burning the checkpoint.
+func TestClassifyTransportErrorTreatsRevokedRefreshTokenAsNeedsSignIn(t *testing.T) {
 	retrieveErr := &oauth2.RetrieveError{ErrorCode: "invalid_grant", ErrorDescription: "token has been revoked"}
 	wrapped := fmt.Errorf("Put \"https://example.test\": %w", retrieveErr)
 
 	c := ClassifyTransportError(wrapped)
-	if c.Bucket != TerminalNotRecoverable {
-		t.Fatalf("bucket = %v, want TerminalNotRecoverable", c.Bucket)
+	if c.Bucket != TerminalNeedsSignIn {
+		t.Fatalf("bucket = %v, want TerminalNeedsSignIn", c.Bucket)
+	}
+	if c.Reason != ReasonNeedsSignIn {
+		t.Fatalf("reason = %q, want %q", c.Reason, ReasonNeedsSignIn)
+	}
+}
+
+// TestClassifyTransportErrorRefreshFailures pins down the split between a
+// grant that is genuinely gone and a token endpoint that is merely having
+// a bad moment. Both arrive as *oauth2.RetrieveError, but treating the
+// second as terminal would throw away a part-transferred multi-gigabyte
+// file over a transient 503 -- it belongs in the same bucket as any other
+// dropped connection, where the backoff policy handles it and the token
+// source simply retries the refresh on the next request.
+func TestClassifyTransportErrorRefreshFailures(t *testing.T) {
+	cases := []struct {
+		name       string
+		err        *oauth2.RetrieveError
+		wantBucket ErrorBucket
+	}{
+		{
+			name:       "revoked grant",
+			err:        &oauth2.RetrieveError{ErrorCode: "invalid_grant"},
+			wantBucket: TerminalNeedsSignIn,
+		},
+		{
+			name:       "unauthorized client",
+			err:        &oauth2.RetrieveError{ErrorCode: "unauthorized_client"},
+			wantBucket: TerminalNeedsSignIn,
+		},
+		{
+			name:       "token endpoint unavailable",
+			err:        &oauth2.RetrieveError{Response: &http.Response{StatusCode: http.StatusServiceUnavailable}},
+			wantBucket: Retryable,
+		},
+		{
+			name:       "token endpoint rate limited",
+			err:        &oauth2.RetrieveError{Response: &http.Response{StatusCode: http.StatusTooManyRequests}},
+			wantBucket: Retryable,
+		},
+		{
+			name:       "server error carrying an oauth error code",
+			err:        &oauth2.RetrieveError{ErrorCode: "temporarily_unavailable", Response: &http.Response{StatusCode: http.StatusServiceUnavailable}},
+			wantBucket: Retryable,
+		},
+		{
+			name:       "unparseable 400 body",
+			err:        &oauth2.RetrieveError{Response: &http.Response{StatusCode: http.StatusBadRequest}},
+			wantBucket: TerminalNeedsSignIn,
+		},
+		{
+			name:       "no response and no error code",
+			err:        &oauth2.RetrieveError{},
+			wantBucket: Retryable,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := ClassifyTransportError(fmt.Errorf("Put \"https://example.test\": %w", tc.err))
+			if c.Bucket != tc.wantBucket {
+				t.Fatalf("bucket = %v, want %v", c.Bucket, tc.wantBucket)
+			}
+			if c.Reason == "" {
+				t.Fatal("reason is empty; the UI has nothing to show")
+			}
+		})
 	}
 }
 

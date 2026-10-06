@@ -4,15 +4,18 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 
 // Covers quickstart.md Scenario 3 (User Story 3): terminal conditions stop
-// automatic retrying and surface a specific reason, with an explicit
-// confirmation step before ever restarting a transfer from byte 0.
+// automatic retrying and surface a specific reason. A transfer only stops
+// to ask before restarting from byte 0 when the answer is genuinely the
+// user's -- the source file changed underneath it. A session Drive itself
+// dropped is not such a case: the acknowledged bytes are gone from Drive's
+// side either way, so the app opens a fresh session and carries on.
 // Google's Drive resumable-upload protocol is mocked at the network
 // boundary (mock_e2e.go) via BALLAST_E2E_MOCK=1.
 //
 // Not covered here: research.md §4's "permission revoked" row (a 401/403
 // where the underlying OAuth refresh token itself is invalid). That
 // classification is verified at the unit level
-// (internal/drive/retry_test.go's TestClassifyTransportErrorTreatsRevokedRefreshTokenAsTerminal)
+// (internal/drive/retry_test.go's TestClassifyTransportErrorTreatsRevokedRefreshTokenAsNeedsSignIn)
 // -- reliably forcing a live token refresh to fail *mid-transfer* within a
 // fast, mocked E2E run would require the access token to already be near
 // expiry when the upload starts, which isn't a realistic precondition to
@@ -117,52 +120,51 @@ test('storage quota exceeded fails within 5 seconds with a specific reason and n
   expect((await getStatus(page, uploadId)).status).toBe('failed');
 });
 
-test('an expired session prompts for confirmation and restarts from byte 0 on confirm (Acceptance Scenario 3)', async ({
+test('an expired session opens a fresh one and finishes on its own, with nothing to confirm (Acceptance Scenario 3)', async ({
   page,
 }) => {
-  // Larger than one baseline (8 MiB) chunk guarantees a first chunk
-  // succeeds -- and its session URI gets persisted to the DB -- before the
-  // deterministic '404-session-after-progress' (mock_e2e.go) expires the
-  // session on the next chunk. A session that never acknowledges a chunk
-  // is never persisted, so restarting it wouldn't exercise the
-  // release-the-old-session-on-restart assertion below.
+  // Larger than one baseline (8 MiB) chunk guarantees a first chunk is
+  // acknowledged -- and its session URI persisted to the DB -- before
+  // '404-session-once' (mock_e2e.go) expires that session exactly once,
+  // leaving the automatic replacement free to run to completion.
   const file = makeTempFile('expired-session.txt', 12 * 1024 * 1024);
+  setOutcome('404-session-once');
+  const uploadId = await startUpload(page, file);
+
+  // Nothing is clicked between starting the upload and this assertion.
+  // Once Drive drops a session, the bytes it had acknowledged are gone
+  // from its side -- a status query against the dead URI returns 404, not
+  // an offset -- so a new session from byte 0 is the only way this file
+  // ever lands. The app does that itself instead of stopping to put a
+  // question to the user whose only real answer is yes.
+  await expect
+    .poll(() => getStatus(page, uploadId).then((s) => s.status), { timeout: 30_000 })
+    .toBe('succeeded');
+
+  const finalStatus = await getStatus(page, uploadId);
+  expect(finalStatus.bytesSent).toBe(file.sizeBytes);
+  expect(finalStatus.awaitingConfirmationReason).toBeFalsy();
+});
+
+test('a session that keeps dying fails with a clear reason instead of restarting forever (loop guard)', async ({
+  page,
+}) => {
+  // Sticky, unlike '404-session-once': every session this upload opens is
+  // expired once it has acknowledged a chunk. Restarting on its own is
+  // right the first time and pathological on repeat -- each attempt
+  // re-sends the whole file -- so the second dropped session is reported
+  // rather than silently costing the user another full transfer.
+  const file = makeTempFile('expired-session-twice.txt', 12 * 1024 * 1024);
   setOutcome('404-session-after-progress');
   const uploadId = await startUpload(page, file);
 
   await expect
-    .poll(() => getStatus(page, uploadId).then((s) => s.status), { timeout: 15_000 })
-    .toBe('awaiting_confirmation');
+    .poll(() => getStatus(page, uploadId).then((s) => s.status), { timeout: 30_000 })
+    .toBe('failed');
+
   const status = await getStatus(page, uploadId);
-  expect(status.awaitingConfirmationReason).toBe('session_expired');
-
-  await expect(page.locator('#progress-confirm')).toBeVisible();
-  await expect(page.locator('#progress-confirm-text')).toContainText('session expired');
-
-  // DebugSessionReleaseCount is a running total for the whole mock-server
-  // process, shared across every test in the run -- so the restart's
-  // effect is checked as a delta, not an absolute count.
-  const releaseCountBefore = await page.evaluate(() =>
-    (window as any).go.main.App.DebugSessionReleaseCount(),
-  );
-
-  setOutcome('approve');
-  await page.click('#progress-confirm-restart-btn');
-
-  await expect
-    .poll(() => getStatus(page, uploadId).then((s) => s.status), { timeout: 15_000 })
-    .toBe('succeeded');
-  const finalStatus = await getStatus(page, uploadId);
-  expect(finalStatus.bytesSent).toBe(file.sizeBytes);
-
-  // Confirms the abandoned pre-restart session was actually released with
-  // Drive (app.go's UploadConfirmRestart), not just discarded locally --
-  // otherwise it could keep completing server-side and produce a
-  // duplicate file alongside the restarted upload's.
-  const releaseCountAfter = await page.evaluate(() =>
-    (window as any).go.main.App.DebugSessionReleaseCount(),
-  );
-  expect(releaseCountAfter - releaseCountBefore).toBe(1);
+  expect(status.failureReason?.toLowerCase()).toContain('session');
+  expect(status.awaitingConfirmationReason).toBeFalsy();
 });
 
 test('a source file deleted while paused fails with a clear reason, not awaiting-confirmation (Edge Case)', async ({

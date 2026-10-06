@@ -20,7 +20,7 @@ export const STATUS: Record<UploadStatus, { label: string; warm: string }> = {
     queued: { label: 'Queued', warm: 'Waiting its turn' },
     paused: { label: 'Paused', warm: 'Parked safely' },
     verifying: { label: 'Verifying', warm: 'Double-checking' },
-    awaiting_confirmation: { label: 'Needs you', warm: 'Restart or cancel' },
+    awaiting_confirmation: { label: 'Needs you', warm: 'Send it or cancel' },
     completed: { label: 'Safe on Drive', warm: 'Done and verified' },
     failed: { label: 'Failed', warm: 'Could not finish' },
     canceled: { label: 'Canceled', warm: 'Stopped by you' },

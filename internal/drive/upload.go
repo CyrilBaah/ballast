@@ -200,17 +200,52 @@ func UploadFile(ctx context.Context, client *http.Client, apiBase string, id int
 		}
 
 		if result.Done {
-			return &UploadResult{FileID: result.FileID, WebViewLink: result.WebViewLink}, nil
+			return &UploadResult{FileID: result.FileID, WebViewLink: fillWebViewLink(ctx, client, apiBase, result.FileID, result.WebViewLink)}, nil
 		}
 	}
 
-	// Not normally reached (the final chunk's response always carries
-	// Done), but guards against a total-size mismatch by asking Drive directly.
-	res, derr, terr := QueryOffset(ctx, client, sessionURI, totalBytes)
-	if terr == nil && derr == nil && res.Done {
-		return &UploadResult{FileID: res.FileID, WebViewLink: res.WebViewLink}, nil
+	// Not normally reached from a fresh send (the final chunk's response
+	// always carries Done), but resuming a checkpoint that was already at
+	// bytesSent == totalBytes when the process died -- before it could
+	// persist a terminal outcome -- lands here on every retry of that
+	// resume. A transient error on this call is retried like any other
+	// (FR-007) rather than declared an outright failure, and a
+	// session-already-closed 404/410 classifies the same way it would for
+	// a stale chunk send (TerminalRecoverable/session_expired), asking the
+	// user to confirm a restart instead of silently discarding a file that
+	// may already be sitting in Drive.
+	for {
+		res, derr, terr := QueryOffset(ctx, client, sessionURI, totalBytes)
+		if terr == nil && derr == nil {
+			if res.Done {
+				return &UploadResult{FileID: res.FileID, WebViewLink: fillWebViewLink(ctx, client, apiBase, res.FileID, res.WebViewLink)}, nil
+			}
+			// A clean (no transport/Drive error) not-done response is
+			// still not proof the upload is dead -- Drive can take a
+			// moment to settle after the crash-window race described
+			// above before a status query reflects the finished file.
+			// Treat it like any other retryable condition (FR-007: no
+			// attempt-count ceiling) instead of declaring an otherwise
+			// 100%-sent file a permanent failure on the very first check.
+			if !paused {
+				paused = true
+				if cb.OnPaused != nil {
+					cb.OnPaused()
+				}
+			}
+			if err := sleepForRetry(ctx, backoff.NextDelay()); err != nil {
+				return nil, ctx.Err()
+			}
+			continue
+		}
+		outcome, retry := classifyAndMaybeRetry(ctx, terr, derr, false, cb, &paused, backoff, policy)
+		if outcome != nil {
+			return nil, outcome
+		}
+		if !retry {
+			return nil, ctx.Err()
+		}
 	}
-	return nil, &TerminalOutcome{Bucket: TerminalNotRecoverable, Reason: "upload ended without Drive confirming completion"}
 }
 
 // classifyAndMaybeRetry classifies a failed attempt (either a transport
@@ -248,6 +283,24 @@ func classifyAndMaybeRetry(ctx context.Context, transportErr error, de *DriveErr
 		return nil, false
 	}
 	return nil, true
+}
+
+// fillWebViewLink returns webViewLink unchanged if already populated, else
+// makes a best-effort fallback lookup by fileID (FetchFileWebViewLink) --
+// needed for any session whose completion response didn't carry the link,
+// most commonly one initiated before InitiateSession requested
+// fields=id,webViewLink. Returns webViewLink ("") unchanged if fileID is
+// empty too or the fallback lookup itself fails; the caller
+// (storage.SetUploadSucceeded) surfaces that as its own clear error rather
+// than this function silently discarding an otherwise-complete upload.
+func fillWebViewLink(ctx context.Context, client *http.Client, apiBase, fileID, webViewLink string) string {
+	if webViewLink != "" || fileID == "" {
+		return webViewLink
+	}
+	if fetched, err := FetchFileWebViewLink(ctx, client, apiBase, fileID); err == nil {
+		return fetched
+	}
+	return webViewLink
 }
 
 // checkIdentity runs the source-file-identity check (research.md §5)

@@ -12,6 +12,7 @@ const KNOWN_ERROR_PATTERNS: Array<{ substring: string; message: string }> = [
     { substring: 'storagequotaexceeded', message: 'Your Google Drive storage is full.' },
     { substring: 'ratelimitexceeded', message: 'Google Drive is busy right now. Please try again in a moment.' },
     { substring: 'notfound', message: "That destination folder is no longer available." },
+    { substring: 'already in progress', message: 'Another upload was already in progress at that moment.' },
     { substring: 'timed out', message: 'That took too long and timed out. Please try again.' },
 ];
 

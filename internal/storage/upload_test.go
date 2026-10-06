@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -372,6 +373,52 @@ func TestSetUploadCancelledOnlyFromPausedOrAwaitingConfirmation(t *testing.T) {
 	}
 	if err := db.SetUploadInProgress(second.ID); err != nil {
 		t.Fatalf("SetUploadInProgress #2 after cancellation: %v", err)
+	}
+}
+
+func TestDeleteUploadOnlyFromTerminalStates(t *testing.T) {
+	db := newTestDB(t)
+	u, err := db.CreateUpload("/tmp/file.txt", 1024, testMtime, "root", "Test Folder")
+	if err != nil {
+		t.Fatalf("CreateUpload: %v", err)
+	}
+	if err := db.DeleteUpload(u.ID); !errors.Is(err, ErrUploadNotDeletable) {
+		t.Fatalf("DeleteUpload on pending = %v, want ErrUploadNotDeletable", err)
+	}
+
+	if err := db.SetUploadInProgress(u.ID); err != nil {
+		t.Fatalf("SetUploadInProgress: %v", err)
+	}
+	if err := db.DeleteUpload(u.ID); !errors.Is(err, ErrUploadNotDeletable) {
+		t.Fatalf("DeleteUpload on in_progress = %v, want ErrUploadNotDeletable", err)
+	}
+
+	if err := db.SetUploadPaused(u.ID); err != nil {
+		t.Fatalf("SetUploadPaused: %v", err)
+	}
+	if err := db.SetUploadCancelled(u.ID); err != nil {
+		t.Fatalf("SetUploadCancelled: %v", err)
+	}
+	if err := db.DeleteUpload(u.ID); err != nil {
+		t.Fatalf("DeleteUpload on cancelled: %v", err)
+	}
+	if _, err := db.GetUpload(u.ID); !errors.Is(err, ErrUploadNotFound) {
+		t.Fatalf("GetUpload after delete = %v, want ErrUploadNotFound", err)
+	}
+
+	failed, err := db.CreateUpload("/tmp/b.txt", 20, testMtime, "root", "Test Folder")
+	if err != nil {
+		t.Fatalf("CreateUpload #2: %v", err)
+	}
+	if err := db.SetUploadFailed(failed.ID, "boom"); err != nil {
+		t.Fatalf("SetUploadFailed: %v", err)
+	}
+	if err := db.DeleteUpload(failed.ID); err != nil {
+		t.Fatalf("DeleteUpload on failed: %v", err)
+	}
+
+	if err := db.DeleteUpload(999); !errors.Is(err, ErrUploadNotFound) {
+		t.Fatalf("DeleteUpload on unknown id = %v, want ErrUploadNotFound", err)
 	}
 }
 

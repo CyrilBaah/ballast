@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -77,7 +78,11 @@ func parseDriveError(resp *http.Response) *DriveError {
 
 // InitiateSession starts a new Drive resumable-upload session for a file
 // named fileName, totalBytes long, inside driveFolderID, returning the
-// session URI from the response's Location header (research.md §1).
+// session URI from the response's Location header (research.md §1). The
+// fields= parameter set here is what Drive honors for the *finalize*
+// response too (the completed-upload body SendChunk/QueryOffset parse) --
+// without it, Drive's default partial response omits webViewLink, which
+// storage.SetUploadSucceeded requires as non-empty.
 func InitiateSession(ctx context.Context, client *http.Client, apiBase, fileName, driveFolderID string, totalBytes int64) (string, *DriveError, error) {
 	if apiBase == "" {
 		apiBase = ProdAPIBase
@@ -91,7 +96,7 @@ func InitiateSession(ctx context.Context, client *http.Client, apiBase, fileName
 		return "", nil, fmt.Errorf("drive: encode session-initiate metadata: %w", err)
 	}
 
-	url := strings.TrimRight(apiBase, "/") + "/upload/drive/v3/files?uploadType=resumable"
+	url := strings.TrimRight(apiBase, "/") + "/upload/drive/v3/files?uploadType=resumable&fields=id,webViewLink"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return "", nil, fmt.Errorf("drive: build session-initiate request: %w", err)
@@ -199,4 +204,36 @@ func ReleaseSession(ctx context.Context, client *http.Client, sessionURI string)
 		return
 	}
 	_ = resp.Body.Close()
+}
+
+// FetchFileWebViewLink looks up a file's webViewLink by id -- a fallback
+// for when a resumable session's completion response didn't carry it,
+// which happens for any session initiated before InitiateSession started
+// requesting fields=id,webViewLink (that preference is set once at session
+// creation and can't be applied retroactively to an already-persisted
+// session URI).
+func FetchFileWebViewLink(ctx context.Context, client *http.Client, apiBase, fileID string) (string, error) {
+	if apiBase == "" {
+		apiBase = ProdAPIBase
+	}
+	reqURL := strings.TrimRight(apiBase, "/") + "/drive/v3/files/" + url.PathEscape(fileID) + "?fields=webViewLink"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("drive: build webViewLink lookup request: %w", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", parseDriveError(resp)
+	}
+	var file struct {
+		WebViewLink string `json:"webViewLink"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&file); err != nil {
+		return "", fmt.Errorf("drive: decode webViewLink lookup response: %w", err)
+	}
+	return file.WebViewLink, nil
 }

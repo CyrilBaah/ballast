@@ -10,15 +10,19 @@
 // The backend allows exactly one active upload at a time (Upload.Start
 // rejects a second call while one is in_progress/paused/awaiting_confirmation)
 // and has no manual-pause endpoint (only automatic retry-pause and Cancel),
-// so this module doesn't expose pause/resume or a multi-upload queue.
+// so this module doesn't expose pause/resume. It does expose a client-side
+// queue (enqueueUploads/advanceQueue) on top of that single-active-upload
+// gate: picking several files enqueues all of them as synthetic 'queued'
+// entries and starts the real backend upload for one at a time, advancing
+// to the next the moment the current one reaches a terminal state.
 
 import { GetStatus as authGetStatus, SignIn as authSignIn, SignOut as authSignOut } from '../api/auth';
 import type { AuthStatus } from '../api/auth';
 import { ListFolders, GetStorageQuota } from '../api/drive';
 import type { DriveFolder, StorageQuota } from '../api/drive';
-import { PickLocal } from '../api/files';
+import { PickLocal, PickLocalMultiple } from '../api/files';
 import type { LocalFileRef } from '../api/files';
-import { Start, GetRecoverable, ConfirmRestart, Cancel, ListRecent } from '../api/upload';
+import { Start, GetRecoverable, ConfirmRestart, Cancel, Delete, Retry, ListRecent } from '../api/upload';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 import { toPlainLanguage } from '../errors';
 import type { UploadStatus } from './components';
@@ -180,6 +184,7 @@ function wireUploadEvents(): void {
         pushActivity('success', `${u.name} confirmed by Google Drive`);
         void refreshStorageQuota();
         notify();
+        void advanceQueue();
     });
     EventsOn('upload:failed', (p: { id: number; reason: string }) => {
         const id = String(p.id);
@@ -187,6 +192,7 @@ function wireUploadEvents(): void {
         const u = upsert(id, { status: 'failed', failureReason: p.reason, throughputBps: 0 });
         pushActivity('error', `${u.name} failed — ${toPlainLanguage(p.reason)}`);
         notify();
+        void advanceQueue();
     });
 }
 
@@ -214,6 +220,23 @@ async function hydrateAfterSignIn(): Promise<void> {
         const recoverable = await GetRecoverable();
         if (recoverable) {
             pushActivity('info', `Picking up ${recoverable.fileName} where it left off`);
+            // Recorded right away, not just once ListRecent resolves below --
+            // otherwise a file picked in the gap between these two awaits
+            // would see an empty uploadsById, sail past hasActiveUpload()/
+            // findInFlight(), and hit the backend's single-active-upload
+            // gate instead (the leftover row is already non-terminal there).
+            upsert(
+                String(recoverable.id),
+                {
+                    name: recoverable.fileName,
+                    kind: fileKind(recoverable.fileName),
+                    sizeBytes: recoverable.totalBytes,
+                    bytesConfirmed: recoverable.bytesSent,
+                    status: mapStatus(recoverable.status),
+                    awaitingConfirmationReason: recoverable.awaitingConfirmationReason || null,
+                },
+                recoverable.fileName,
+            );
         }
     } catch {
         /* non-fatal */
@@ -289,12 +312,16 @@ export async function signOut(): Promise<{ error?: string }> {
     }
 }
 
-const ACTIVE_STATUSES: UploadStatus[] = ['queued', 'uploading', 'reconnecting', 'awaiting_confirmation'];
+// Mirrors the backend's own gate (storage.nonTerminalStatuses: in_progress,
+// paused, awaiting_confirmation) -- deliberately excludes 'queued', since a
+// queued entry hasn't been submitted to the backend yet and must not block
+// the next queue item from starting.
+const BACKEND_ACTIVE_STATUSES: UploadStatus[] = ['uploading', 'reconnecting', 'awaiting_confirmation'];
 
-export function hasActiveUpload(): boolean {
+function hasActiveUpload(): boolean {
     for (const id of uploadsOrder) {
         const u = uploadsById.get(id);
-        if (u && ACTIVE_STATUSES.includes(u.status)) return true;
+        if (u && BACKEND_ACTIVE_STATUSES.includes(u.status)) return true;
     }
     return false;
 }
@@ -303,19 +330,70 @@ export async function pickFile(): Promise<LocalFileRef | null> {
     return PickLocal();
 }
 
+export async function pickFiles(): Promise<LocalFileRef[]> {
+    return PickLocalMultiple();
+}
+
 export async function listDriveFolders(parentId: string): Promise<DriveFolder[]> {
     return ListFolders(parentId);
 }
 
-export async function startUpload(file: LocalFileRef, folder: { id: string; name: string }): Promise<{ ok: boolean; error?: string }> {
+interface QueuedUpload {
+    syntheticId: string;
+    file: LocalFileRef;
+    folder: { id: string; name: string };
+}
+
+const uploadQueue: QueuedUpload[] = [];
+let syntheticSeq = 0;
+
+// Same set BACKEND_ACTIVE_STATUSES uses, plus 'queued': a file waiting in
+// the client-side queue is just as "taken" as one actively uploading, so a
+// second pick of the same destination must be rejected while either holds.
+const IN_FLIGHT_STATUSES: UploadStatus[] = ['queued', 'uploading', 'reconnecting', 'awaiting_confirmation'];
+
+// "Same file" is judged by destination identity (drive folder + file name),
+// which is exactly what LiveUpload.destination/name already record -- this
+// also catches a leftover in-progress upload hydrated from ListRecent after
+// a restart, with no extra bookkeeping needed.
+function findInFlight(fileName: string, folderName: string): LiveUpload | undefined {
+    for (const id of uploadsOrder) {
+        const u = uploadsById.get(id);
+        if (u && u.name === fileName && u.destination === folderName && IN_FLIGHT_STATUSES.includes(u.status)) {
+            return u;
+        }
+    }
+    return undefined;
+}
+
+function nextSyntheticId(): string {
+    syntheticSeq += 1;
+    return `queued-${Date.now()}-${syntheticSeq}`;
+}
+
+// Replaces a synthetic queue entry's map key/order slot with the real
+// backend id, in place, so the row doesn't jump position or flicker.
+function replaceId(oldId: string, newId: string): void {
+    const existing = uploadsById.get(oldId);
+    if (!existing) return;
+    uploadsById.delete(oldId);
+    existing.id = newId;
+    uploadsById.set(newId, existing);
+    const idx = uploadsOrder.indexOf(oldId);
+    if (idx !== -1) uploadsOrder[idx] = newId;
+}
+
+async function startUpload(file: LocalFileRef, folder: { id: string; name: string }, syntheticId: string): Promise<{ ok: boolean; error?: string; requeued?: boolean }> {
     if (hasActiveUpload()) {
         return { ok: false, error: 'Finish or cancel the current upload before starting another.' };
     }
     try {
         const id = await Start(file.path, folder.id || 'root', folder.name || 'My Drive');
         defaultFolder = folder;
+        const realId = String(id);
+        replaceId(syntheticId, realId);
         upsert(
-            String(id),
+            realId,
             {
                 name: file.name,
                 kind: fileKind(file.name),
@@ -326,20 +404,131 @@ export async function startUpload(file: LocalFileRef, folder: { id: string; name
             },
             file.name,
         );
-        pushActivity('info', `${file.name} queued for upload`);
+        pushActivity('info', `${file.name} started uploading`);
         notify();
         return { ok: true };
     } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.toLowerCase().includes('already in progress')) {
+            // The backend's single-active-upload slot was still held by a
+            // leftover upload at the exact instant this one tried to claim
+            // it (a narrow hydration-timing race) -- put it back at the
+            // front of the queue instead of failing it. advanceQueue gets
+            // re-invoked the moment that other upload reaches a terminal
+            // state (its upload:complete/upload:failed handler already
+            // calls it), so this file starts automatically once it's clear.
+            uploadQueue.unshift({ syntheticId, file, folder });
+            pushActivity('info', `${file.name} is waiting for the current upload to finish`);
+            notify();
+            return { ok: false, error: message, requeued: true };
+        }
+        upsert(syntheticId, { status: 'failed', failureReason: message });
+        pushActivity('error', `${file.name} could not start — ${toPlainLanguage(message)}`);
+        notify();
+        return { ok: false, error: message };
     }
 }
 
+let advancingQueue = false;
+
+// Drains the queue one item at a time: starts the next queued file's real
+// backend upload only once nothing is backend-active, then relies on its
+// caller sites (a completion/failure event, or cancelUpload resolving) to
+// call this again for the item after that.
+async function advanceQueue(): Promise<void> {
+    if (advancingQueue || hasActiveUpload() || !uploadQueue.length) return;
+    advancingQueue = true;
+    const next = uploadQueue.shift()!;
+    const outcome = await startUpload(next.file, next.folder, next.syntheticId);
+    advancingQueue = false;
+    // A requeued item means the backend slot is still genuinely held by
+    // someone else -- retrying immediately would just busy-loop on the same
+    // conflict. Wait for that upload's terminal event to call advanceQueue
+    // again instead. Any other failure leaves the backend free, so keep draining.
+    if (!outcome.requeued) void advanceQueue();
+}
+
+export function enqueueUploads(files: LocalFileRef[], folder: { id: string; name: string }): void {
+    const folderName = folder.name || 'My Drive';
+    for (const file of files) {
+        if (findInFlight(file.name, folderName)) {
+            pushActivity('warn', `${file.name} is already uploading to ${folderName} — skipped duplicate pick`);
+            continue;
+        }
+        const syntheticId = nextSyntheticId();
+        uploadQueue.push({ syntheticId, file, folder });
+        upsert(
+            syntheticId,
+            {
+                name: file.name,
+                kind: fileKind(file.name),
+                sizeBytes: file.sizeBytes,
+                bytesConfirmed: 0,
+                status: 'queued',
+                destination: folderName,
+            },
+            file.name,
+        );
+    }
+    notify();
+    void advanceQueue();
+}
+
 export async function cancelUpload(id: string): Promise<void> {
+    // A queued item hasn't been submitted to the backend yet (no real id to
+    // cancel there) -- just drop it from the local queue.
+    const queueIdx = uploadQueue.findIndex((q) => q.syntheticId === id);
+    if (queueIdx !== -1) {
+        uploadQueue.splice(queueIdx, 1);
+        upsert(id, { status: 'canceled' });
+        notify();
+        return;
+    }
     await Cancel(Number(id));
+    void advanceQueue();
 }
 
 export async function confirmRestartUpload(id: string): Promise<void> {
     await ConfirmRestart(Number(id));
+}
+
+// Starts a brand-new upload of a cancelled transfer's same file/destination
+// (UploadRetry, app.go) -- a distinct row alongside the old cancelled one in
+// History, not a resurrection of it, since Drive already closed that session.
+// Rejects the same way any other Start attempt does if something else is
+// already active (surfaced to the caller as a plain-language toast, same as
+// cancel/restart) -- retrying is a single deliberate click, not something
+// worth building a queue-and-wait path for.
+export async function retryUpload(id: string): Promise<void> {
+    const old = uploadsById.get(id);
+    const newId = await Retry(Number(id));
+    const realId = String(newId);
+    const name = old?.name ?? `Upload #${realId}`;
+    upsert(
+        realId,
+        {
+            name,
+            kind: fileKind(name),
+            sizeBytes: old?.sizeBytes ?? 0,
+            bytesConfirmed: 0,
+            status: 'uploading',
+            destination: old?.destination ?? 'My Drive',
+        },
+        name,
+    );
+    pushActivity('info', `${name} started uploading again`);
+    notify();
+}
+
+// Permanently removes a terminal (completed/failed/canceled) upload from
+// history. The backend rejects anything still active (storage.DeleteUpload),
+// so this only ever needs to drop the row from local state, not reconcile
+// it against a queue or in-flight transfer.
+export async function deleteUpload(id: string): Promise<void> {
+    await Delete(Number(id));
+    uploadsById.delete(id);
+    uploadsOrder = uploadsOrder.filter((existingId) => existingId !== id);
+    notify();
 }
 
 export function orderedUploads(): LiveUpload[] {

@@ -79,6 +79,12 @@ func newE2EMockServer() *httptest.Server {
 	// rather than being invisible because this mock always returns 204
 	// regardless of whether DELETE was ever sent.
 	var sessionReleaseCount int
+	// expiredSessionOnce latches the "404-session-once" outcome after it
+	// has fired, so a test can expire exactly one session and let the
+	// automatic replacement run to completion (app.go's
+	// restartExpiredSession) -- unlike the sticky
+	// "404-session-after-progress", which expires every session in turn.
+	var expiredSessionOnce bool
 	// srv is assigned once httptest.NewServer starts the listener below;
 	// handlers registered before that point (e.g. /userinfo, for the
 	// avatar URL it returns) only read it once a real request arrives,
@@ -289,6 +295,22 @@ func newE2EMockServer() *httptest.Server {
 			// without racing setOutcome() against how fast a single-chunk
 			// upload completes.
 			if hasProgress {
+				writeE2EDriveError(w, http.StatusNotFound, "notFound", "", "session not found")
+				return
+			}
+		case "404-session-once":
+			// Fires at most once, and only after a chunk has been
+			// acknowledged so the session URI is already persisted --
+			// exactly the situation where Drive has dropped a session that
+			// carried real progress, and the app must open a fresh one and
+			// carry on by itself rather than asking anyone.
+			mu.Lock()
+			expire := hasProgress && !expiredSessionOnce
+			if expire {
+				expiredSessionOnce = true
+			}
+			mu.Unlock()
+			if expire {
 				writeE2EDriveError(w, http.StatusNotFound, "notFound", "", "session not found")
 				return
 			}

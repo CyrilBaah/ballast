@@ -28,6 +28,8 @@ export const icon = {
         `<svg viewBox="0 0 24 24" fill="none" class="${cls}"><path d="M12 2.8 20 6v6c0 4.6-3.3 7.9-8 9.2C7.3 19.9 4 16.6 4 12V6l8-3.2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m8.8 12.2 2.2 2.2 4.2-4.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
     refresh: (cls = BASE) =>
         `<svg viewBox="0 0 24 24" fill="none" class="${cls}"><path d="M20 12a8 8 0 1 1-2.6-5.9M20 4v4.5h-4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    trash: (cls = BASE) =>
+        `<svg viewBox="0 0 24 24" fill="none" class="${cls}"><path d="M4.5 7h15M9.5 7V4.8c0-.7.6-1.3 1.3-1.3h2.4c.7 0 1.3.6 1.3 1.3V7M18.5 7l-.7 12.2a2 2 0 0 1-2 1.8H8.2a2 2 0 0 1-2-1.8L5.5 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
     alert: (cls = BASE) =>
         `<svg viewBox="0 0 24 24" fill="none" class="${cls}"><path d="M12 4.5 21 20H3l9-15.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 10v4.2M12 17h.01" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
     check: (cls = BASE) =>

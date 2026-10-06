@@ -20,14 +20,20 @@ export function DriveListFolders(arg1:string):Promise<Array<drive.Folder>>;
 
 export function FilesPickLocal():Promise<main.LocalFileRef>;
 
+export function FilesPickLocalMultiple():Promise<Array<main.LocalFileRef>>;
+
 export function UploadCancel(arg1:number):Promise<void>;
 
 export function UploadConfirmRestart(arg1:number):Promise<void>;
+
+export function UploadDelete(arg1:number):Promise<void>;
 
 export function UploadGetRecoverable():Promise<main.RecoverableUploadDTO>;
 
 export function UploadGetStatus(arg1:number):Promise<main.UploadStatusDTO>;
 
 export function UploadListRecent():Promise<Array<main.UploadListItemDTO>>;
+
+export function UploadRetry(arg1:number):Promise<number>;
 
 export function UploadStart(arg1:string,arg2:string,arg3:string):Promise<number>;

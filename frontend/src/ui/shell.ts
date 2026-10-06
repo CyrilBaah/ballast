@@ -123,16 +123,12 @@ export function mountApp(root: HTMLElement): void {
             render();
         },
         openPicker: () => {
-            if (live.hasActiveUpload()) {
-                showToast('Finish or cancel the current upload before starting another.');
-                return;
-            }
             openFilePicker({
                 onClose: render,
                 onStarted: () => {
                     state.view = 'transfers';
                     render();
-                    showToast('Upload started.');
+                    showToast('Added to your upload queue.');
                 },
             });
         },
@@ -263,7 +259,7 @@ export function mountApp(root: HTMLElement): void {
                         <div class="sidebar-cta">
                             ${button(`${icon.plus()} Choose files`, {
                                 variant: 'primary',
-                                attrs: `id="sidebar-pick" ${live.hasActiveUpload() ? 'disabled title="Finish or cancel the current upload first"' : ''}`,
+                                attrs: `id="sidebar-pick"`,
                             })}
                         </div>
                         <div class="sidebar-bottom">

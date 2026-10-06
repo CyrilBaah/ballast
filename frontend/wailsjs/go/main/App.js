@@ -34,12 +34,20 @@ export function FilesPickLocal() {
   return window['go']['main']['App']['FilesPickLocal']();
 }
 
+export function FilesPickLocalMultiple() {
+  return window['go']['main']['App']['FilesPickLocalMultiple']();
+}
+
 export function UploadCancel(arg1) {
   return window['go']['main']['App']['UploadCancel'](arg1);
 }
 
 export function UploadConfirmRestart(arg1) {
   return window['go']['main']['App']['UploadConfirmRestart'](arg1);
+}
+
+export function UploadDelete(arg1) {
+  return window['go']['main']['App']['UploadDelete'](arg1);
 }
 
 export function UploadGetRecoverable() {
@@ -52,6 +60,10 @@ export function UploadGetStatus(arg1) {
 
 export function UploadListRecent() {
   return window['go']['main']['App']['UploadListRecent']();
+}
+
+export function UploadRetry(arg1) {
+  return window['go']['main']['App']['UploadRetry'](arg1);
 }
 
 export function UploadStart(arg1, arg2, arg3) {

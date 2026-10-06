@@ -19,8 +19,13 @@ const FILTERS: { id: 'active' | 'all' | 'secured'; label: string }[] = [
     { id: 'secured', label: 'Delivered' },
 ];
 
+// The one decision still worth a user's attention: the file on disk is no
+// longer the one they picked, so sending it would put different contents
+// in Drive under the same name. A session Drive dropped never reaches this
+// state -- there is nothing left to resume against and only one way for
+// the file to land, so the app opens a fresh session and carries on by
+// itself (app.go's restartExpiredSession).
 const CONFIRMATION_COPY: Record<string, string> = {
-    session_expired: "This upload's session expired.",
     file_changed: 'The local file changed since this upload started.',
 };
 
@@ -51,7 +56,7 @@ export function renderTransfers(container: HTMLElement, ctx: ViewCtx): void {
                     <div style="display:flex;align-items:center;gap:8px">
                         ${button(`${icon.plus()} Choose files`, {
                             variant: 'primary',
-                            attrs: `id="transfers-pick" ${live.hasActiveUpload() ? 'disabled title="Finish or cancel the current upload first"' : ''}`,
+                            attrs: `id="transfers-pick"`,
                         })}
                     </div>
                 </header>
@@ -132,6 +137,13 @@ async function applyAction(action: string, id: string, ctx: ViewCtx) {
         } else if (action === 'open-drive') {
             const u = live.orderedUploads().find((x) => x.id === id);
             if (u?.driveFileLink) window.open(u.driveFileLink, '_blank', 'noopener,noreferrer');
+        } else if (action === 'delete') {
+            await live.deleteUpload(id);
+            if (ctx.selectedUploadId === id) ctx.select(null);
+            ctx.rerender();
+        } else if (action === 'retry') {
+            await live.retryUpload(id);
+            ctx.rerender();
         }
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -152,13 +164,21 @@ function tile(label: string, value: string, sub: string, tone: string, iconSvg: 
 
 function cardActions(u: LiveUpload, size: 'icon' | 'sm'): string {
     if (u.status === 'awaiting_confirmation') {
-        return `${button(`${icon.play('icon')}${size === 'sm' ? ' Restart from the beginning' : ''}`, { variant: size === 'sm' ? 'primary' : 'ghost', size, attrs: `data-card-action="restart" data-card-id="${u.id}" data-detail-action="restart" title="Restart from the beginning"` })}${button(icon.x('icon'), { variant: size === 'sm' ? 'outline' : 'ghost', size, attrs: `data-card-action="cancel" data-card-id="${u.id}" data-detail-action="cancel" title="Cancel"` })}`;
+        return `${button(`${icon.play('icon')}${size === 'sm' ? ' Send the file as it is now' : ''}`, { variant: size === 'sm' ? 'primary' : 'ghost', size, attrs: `data-card-action="restart" data-card-id="${u.id}" data-detail-action="restart" title="Send the file as it is now"` })}${button(icon.x('icon'), { variant: size === 'sm' ? 'outline' : 'ghost', size, attrs: `data-card-action="cancel" data-card-id="${u.id}" data-detail-action="cancel" title="Cancel"` })}`;
     }
     if (u.status === 'queued' || u.status === 'uploading' || u.status === 'reconnecting') {
         return button(icon.x('icon'), { variant: 'ghost', size, attrs: `data-card-action="cancel" data-card-id="${u.id}" data-detail-action="cancel" title="Cancel"` });
     }
     if (u.status === 'completed' && u.driveFileLink) {
         return button(`${icon.drive('icon')}${size === 'sm' ? ' View in Drive' : ''}`, { variant: size === 'sm' ? 'soft' : 'ghost', size, attrs: `data-card-action="open-drive" data-card-id="${u.id}" data-detail-action="open-drive" title="View in Drive"` });
+    }
+    const deleteBtn = button(`${icon.trash('icon')}${size === 'sm' ? ' Delete' : ''}`, { variant: size === 'sm' ? 'outline' : 'ghost', size, attrs: `data-card-action="delete" data-card-id="${u.id}" data-detail-action="delete" title="Delete"` });
+    if (u.status === 'canceled') {
+        const retryBtn = button(`${icon.refresh('icon')}${size === 'sm' ? ' Retry' : ''}`, { variant: size === 'sm' ? 'primary' : 'ghost', size, attrs: `data-card-action="retry" data-card-id="${u.id}" data-detail-action="retry" title="Retry"` });
+        return `${retryBtn}${deleteBtn}`;
+    }
+    if (u.status === 'failed') {
+        return deleteBtn;
     }
     return '';
 }
@@ -243,7 +263,7 @@ function detailPanel(u: LiveUpload): string {
                 u.status === 'failed' && u.failureReason
                     ? `<p style="margin-top:12px;font-size:12px;color:var(--color-coral)">${toPlainLanguage(u.failureReason)}</p>`
                     : u.status === 'awaiting_confirmation'
-                      ? `<p style="margin-top:12px;font-size:12px;color:var(--color-tangerine)">${toPlainLanguage(CONFIRMATION_COPY[u.awaitingConfirmationReason ?? ''] ?? 'This upload needs a decision.')} Restart from the beginning, or cancel it.</p>`
+                      ? `<p style="margin-top:12px;font-size:12px;color:var(--color-tangerine)">${toPlainLanguage(CONFIRMATION_COPY[u.awaitingConfirmationReason ?? ''] ?? 'This upload needs a decision.')} Send it as it is now, or cancel it.</p>`
                       : `<p style="margin-top:12px;font-size:12px;font-style:italic;color:var(--color-mute)">"${STATUS_WARM[u.status]}"</p>`
             }
 
