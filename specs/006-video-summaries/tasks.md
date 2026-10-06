@@ -92,7 +92,7 @@ description: "Task list for Automatic Video Summaries"
   - find by `ballastSummaryFor` tag;
   - free name `Sermon — Summary`, then `Sermon — Summary (2)`;
   - create with `mimeType: application/vnd.google-apps.document`, HTML media, and the tag.
-- [ ] T017 [P] [US1] `internal/summaries/worker_test.go` happy path, with a fake `Summarizer`, a temp DB, a fake uploader, and a fake model fetch. Ends with a local `.md` next to the video and "<name> — Summary" uploaded. Phases run in this order:
+- [X] T017 [P] [US1] `internal/summaries/worker_test.go` happy path, with a fake `Summarizer`, a temp DB, a fake uploader, and a fake model fetch. Ends with a local `.md` next to the video and "<name> — Summary" uploaded. Phases run in this order:
   1. `waiting_for_captions`, then on `TranscriptReady`: `awaiting_consent`
   2. consent, then `downloading_model`
   3. `waiting_for_engine`, which holds until `heavywork` is free
@@ -115,7 +115,7 @@ description: "Task list for Automatic Video Summaries"
   - makes T015 pass.
 - [ ] T025 [US1] `internal/summaries/model.go`: the pinned `modelfetch.Spec` from T004. Until T004 is approved it holds an obviously unset placeholder that makes `Availability()` report "The summary model hasn't been chosen yet".
 - [X] T026 [P] [US1] `internal/drive/summarydoc.go` (makes T016 pass).
-- [ ] T027 [US1] `internal/summaries/worker.go`:
+- [X] T027 [US1] `internal/summaries/worker.go`:
   - mirrors `internal/captions/worker.go`: one job at a time, the consent gate, the shared `modelfetch` download (with its own fetch lock), `heavywork.Acquire` around the server's lifetime, `parts_done` checkpoints, verify, share-message rules, render, local `.md` via a shared free-name helper, wait for the video, adopt-or-create the Google Doc, and cleanup;
   - exposes `Enqueue(uploadID)`, `TranscriptReady(uploadID, srtPath)` (which copies the transcript into the job folder), `NoTranscript(uploadID, reason)`, `VideoSucceeded`, `AnswerConsent`, `Cancel`, `Retry`;
   - makes T017 pass.
@@ -143,7 +143,7 @@ description: "Task list for Automatic Video Summaries"
 
 ### Tests ⚠️
 
-- [ ] T034 [P] [US2] Extend `internal/summaries/worker_test.go`:
+- [X] T034 [P] [US2] Extend `internal/summaries/worker_test.go`:
   - an unusable answer is retried up to 3 attempts, then fails with "The summary model couldn't produce a usable summary";
   - a request over 20 minutes counts as an attempt (shortened in tests);
   - a server that won't start or load triggers one re-download, then fails "The summary model couldn't be loaded";
@@ -154,12 +154,12 @@ description: "Task list for Automatic Video Summaries"
   - an upload failure cancels the job;
   - Drive errors and being signed out retry without failing;
   - `Retry` reuses the transcript.
-- [ ] T035 [P] [US2] `internal/summaries/recovery_test.go`: resume at `parts_done`; `summary.json` present means continue at `waiting_for_video`; orphaned work folders are cleaned up.
+- [X] T035 [P] [US2] `internal/summaries/recovery_test.go`: resume at `parts_done`; `summary.json` present means continue at `waiting_for_video`; orphaned work folders are cleaned up.
 
 ### Implementation
 
-- [ ] T036 [US2] Failure paths, retry caps, and `Cancel` in `worker.go` (makes T034 pass).
-- [ ] T037 [US2] Restart recovery and orphan cleanup in `worker.go` (makes T035 pass).
+- [X] T036 [US2] Failure paths, retry caps, and `Cancel` in `worker.go` (makes T034 pass).
+- [X] T037 [US2] Restart recovery and orphan cleanup in `worker.go` (makes T035 pass).
 - [ ] T038 [US2] `app_summaries.go`: cancel summaries wherever `cancelCaptions` runs; add the `SummariesRetry` bound method; add a "Try again" action on failed summary lines in `transfers.ts`.
 - [ ] T039 [US2] Extend `summaries.spec.ts`: a failed summary shows its reason and Try again, and the upload and caption lines are unchanged.
 
@@ -181,7 +181,7 @@ description: "Task list for Automatic Video Summaries"
 
 ## Phase 6: User Story 4 — use the summary before the upload finishes (P2)
 
-- [ ] T044 [US4] Add a test to `worker_test.go`: with the video still uploading, the local `"<name> — Summary.md"` exists as soon as summarising ends; nothing is in Drive until `VideoSucceeded`; a cancel keeps the `.md`. (The behaviour is built in T027; this task proves FR-007 and FR-016 on their own.)
+- [X] T044 [US4] Add a test to `worker_test.go`: with the video still uploading, the local `"<name> — Summary.md"` exists as soon as summarising ends; nothing is in Drive until `VideoSucceeded`; a cancel keeps the `.md`. (The behaviour is built in T027; this task proves FR-007 and FR-016 on their own.)
 
 ---
 
