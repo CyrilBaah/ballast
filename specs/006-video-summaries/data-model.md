@@ -1,4 +1,4 @@
-# Data Model: Automatic Sermon Summaries
+# Data Model: Automatic Video Summaries
 
 **Feature**: [spec.md](./spec.md) | **Plan**: [plan.md](./plan.md) | **Research**: [research.md](./research.md)
 
@@ -24,7 +24,7 @@ There are no secrets: the engine is local and needs no key.
 | `local_copy_path` | TEXT | The `.md` next to the original video (FR-007) |
 | `drive_file_id` | TEXT | The Google Doc, when `done` |
 | `drive_file_link` | TEXT | Set together with `drive_file_id` |
-| `drive_file_name` | TEXT | e.g. `Sermon — Summary (2)` |
+| `drive_file_name` | TEXT | e.g. `Lecture — Summary (2)` |
 | `note` | TEXT | Failure reason when `failed`; reason when `cancelled` |
 | `created_at`, `updated_at`, `ended_at` | DATETIME | As in `caption_job` |
 
@@ -48,7 +48,7 @@ done. It is deleted when the job ends.
 created (video upload starts, summaries on, captions on and available)
   │
   ▼
-waiting / waiting_for_captions ── caption job ends without transcript ──► cancelled ("No transcript to summarise")
+waiting / waiting_for_captions ── caption job ends without transcript ──► cancelled ("No speech to summarise")
   │ transcript ready (copied to work folder)
   ├─ consent unasked ──► waiting / awaiting_consent ── declined ──► cancelled ("Summaries were turned off")
   ├─ model missing   ──► in_progress / downloading_model

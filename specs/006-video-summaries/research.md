@@ -1,11 +1,14 @@
-# Research: Automatic Sermon Summaries
+# Research: Automatic Video Summaries
 
 **Feature**: [spec.md](./spec.md) | **Plan**: [plan.md](./plan.md) | **Date**: 2026-10-06 (revised for the free, on-Mac design)
 
 Items marked **measured** come from running the real 43-minute sermon
 (`Paster Joseph Ayertey.mp4`) through Feature 005's pipeline and
 summarising it by hand on 2026-10-06. The hand-made summary shared to the
-church group that day is the quality reference.
+church group that day is the quality reference for sermons. Summaries are
+for **any** video with speech (spec Clarifications), so a non-religious
+reference is added too: the 13-minute `Aksum.mp4` in the maintainer's
+Downloads folder, summarised by hand during Scenario 0.
 
 ## §1 Engine: llama.cpp's `llama-server`, run as a helper program
 
@@ -38,7 +41,7 @@ priority.
 - *Apple's on-device Foundation Models framework*: free and built in, but
   it needs Swift bridging, requires Apple Intelligence to be enabled, and
   has a context window of only a few thousand tokens, too small for a
-  sermon transcript.
+  long video transcript.
 - *A paid cloud model*: rejected by the user ("cost 0"). The engine
   interface (§13) leaves room to add one later as an option.
 
@@ -47,17 +50,18 @@ priority.
 **Decision**: Pick the model by testing it during implementation (task
 list), not now. Candidates are open, instruction-tuned models of about
 3–8 billion parameters, 4-bit quantised GGUF files of at most about 5 GB,
-whose licence allows free use. Each candidate summarises today's real
-transcript and is scored on:
+whose licence allows free use. Each candidate summarises both reference
+videos' transcripts (the sermon and `Aksum.mp4`) and is scored on:
 
 1. **Fits**: peak memory of `llama-server` stays under about 5.5 GB on the
    8 GB M2, run after the speech model has exited (§7).
 2. **Follows the shape**: schema-valid JSON every time (§3).
-3. **Honest**: at least 3 quotes pass the transcript check (§4); no
-   invented Bible references (compared with the reference).
+3. **Honest**: at least 3 quotes pass the transcript check (§5); no
+   invented references, and no Bible section at all for `Aksum.mp4`
+   (SC-010).
 4. **Useful**: a reviewer judges the main points and share message close
    to the reference summary (SC-009, SC-002).
-5. **Fast enough**: meets SC-004 (≤10 min for a 1-hour sermon).
+5. **Fast enough**: meets SC-004 (≤10 min for a 1-hour video).
 
 The winner's download URL is pinned to a specific repository revision,
 with its size and SHA-256 compiled in, the same discipline as the speech
@@ -72,8 +76,9 @@ so the server can only produce JSON in this shape:
 ```text
 overview: string
 main_points: [{ title: string, detail: string }]
-actions: [string]                         // "What we must do"
-bible_references: [{ reference: string, heard_as: string, certain: boolean }]
+actions: [string]                         // "Key takeaways / actions" — empty → section omitted (FR-002b)
+references: [{ kind: "bible" | "book" | "source" | "other",
+               reference: string, heard_as: string, certain: boolean }]   // empty → section omitted
 quotes: [{ text: string, start_seconds: number, source_text: string }]
 title: string
 description: string
@@ -97,13 +102,13 @@ mode entirely, and Go then applies the share-message rules itself (§12).
   and candidate quotes with `source_text` and `start_seconds`. A final
   **combine** pass turns all the notes into the full schema.
 
-**Measured**: the 43-minute transcript is about 5,400 words, roughly
-7,000 tokens, so it fits one pass. A 3-hour sermon (about 40,000 tokens)
+**Measured**: the 43-minute sermon transcript is about 5,400 words,
+roughly 7,000 tokens, so it fits one pass. A 3-hour video (about 40,000 tokens)
 becomes about 9 parts and one combine pass.
 
 **Rationale**: Small models lose track of very long inputs, and a large
 context costs memory on an 8 GB Mac. Parts plus a combine pass cover the
-whole sermon (FR-004, SC-003) within fixed memory, and each finished part
+whole video (FR-004, SC-003) within fixed memory, and each finished part
 is saved, so a restart resumes from the next part (FR-017).
 
 ## §5 Keeping quotes honest (FR-003, SC-002)
@@ -122,14 +127,21 @@ quotes could be verified".
 check is what makes "nothing is invented" hold regardless of model
 quality.
 
-## §6 Bible references and "Check before sharing" (FR-003a)
+## §6 References and "Check before sharing" (FR-002b, FR-003a)
 
-**Decision**: The model returns `heard_as` and `certain` for each
-reference. Uncertain ones appear under their likely reference, and in a
-separate "Check before sharing" list with what was heard. That list is
-never inside `share_message`. As a cheap extra safeguard, Go checks that
-each book name is a real Bible book (a fixed list of 66). A reference that
-fails is moved to "Check before sharing" with `certain: false`.
+**Decision**: The model returns each reference with a `kind` (`bible`,
+`book`, `source`, `other`), `heard_as`, and `certain`.
+- Uncertain ones appear under their likely reference, and in a separate
+  "Check before sharing" list with what was heard. That list is never
+  inside `share_message`.
+- For `kind: bible`, Go checks that the book name is a real Bible book (a
+  fixed list of 66). A reference that fails is moved to "Check before
+  sharing" with `certain: false`.
+- Go also drops any reference whose `heard_as` doesn't appear in the
+  transcript at all. This catches invented references on any kind of
+  video, for example a model adding scripture to a documentary (SC-010).
+- An empty references list, or an empty actions list, means that section
+  is left out of every output (FR-002b).
 
 **Measured**: the real sermon had "Matthew 28, verse 30" (for Matthew
 28:20) and "Hebrews chapter 24, verse 26" (for Hebrews 11:24–26). These
@@ -167,7 +179,7 @@ again" (FR-009).
 
 **Zero.** No account, key, or usage charge. The only costs are a
 one-time download (the chosen model, about 2–5 GB, pinned in §2) and the
-Mac's own time and power. Time per sermon is measured in quickstart
+Mac's own time and power. Time per video is measured in quickstart
 Scenario 1 against SC-004.
 
 ## §10 Transcript input format
@@ -190,11 +202,15 @@ This uses the existing Drive client; no new dependency.
 
 ## §12 Prompt and post-processing
 
-The system prompt fixes the shape that worked for this church:
-- English only, sermon only, no announcements;
+The system prompt is **general-purpose** (any video with speech) and
+fixes the shape that worked in the hand-made summary:
+- English only, main content only, no housekeeping;
+- include references and actions **only** if the speaker actually gave
+  them; never add Bible verses or sources that weren't mentioned;
+- keep summaries of short or sparse videos in proportion;
 - an overview of 3–5 sentences;
 - 4–7 main points;
-- the preacher's "What we must do" actions;
+- the speaker's calls to action, if any;
 - 3–6 quotes;
 - a title under 70 characters;
 - a description under 600 characters;
@@ -202,8 +218,10 @@ The system prompt fixes the shape that worked for this church:
   emojis, no timestamps, no notes about the transcript, closing with a
   one-line blessing.
 
-The hand-made reference summary is the prompt's single example
-(`internal/summaries/testdata/reference-2026-10-04.md`).
+The prompt carries **no** worked example, so the model doesn't copy
+sermon phrasing into unrelated videos. The two reference summaries
+(`internal/summaries/testdata/reference-sermon-2026-10-04.md` and
+`reference-aksum.md`) are used only in tests and Scenario 0 reviews.
 
 Because small models drift, Go **enforces** the share-message rules after
 generation rather than trusting the prompt: it strips emoji characters,

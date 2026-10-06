@@ -1,8 +1,8 @@
-# Implementation Plan: Automatic Sermon Summaries
+# Implementation Plan: Automatic Video Summaries
 
-**Branch**: `006-sermon-summaries` | **Date**: 2026-10-06 (revised: free, on-Mac engine) | **Spec**: [spec.md](./spec.md)
+**Branch**: `006-video-summaries` | **Date**: 2026-10-06 (revised: free, on-Mac engine) | **Spec**: [spec.md](./spec.md)
 
-**Input**: Feature specification from `/specs/006-sermon-summaries/spec.md`
+**Input**: Feature specification from `/specs/006-video-summaries/spec.md`
 
 **Note**: This template is filled in by the `/speckit-plan` command; its definition describes the execution workflow.
 
@@ -14,12 +14,16 @@ finished, using a shared heavy-work lock so only one model runs at a
 time. Then it:
 1. Starts a bundled `llama-server` (llama.cpp) on `127.0.0.1`, with a free
    open model downloaded once after a consent prompt.
-2. Asks for a summary in a fixed JSON shape. Sermons up to about an hour
+2. Asks for a summary in a fixed JSON shape. Videos up to about an hour
    are done in one pass; longer ones in ~20-minute parts that are then
    combined.
-3. Checks every quote against the transcript, routes doubtful Bible
-   references to a "Check before sharing" note, and enforces the
-   WhatsApp-message rules in code.
+3. Checks every quote against the transcript, drops references that were
+   never said, routes doubtful ones to a "Check before sharing" note,
+   leaves out the references and takeaways sections when a video has
+   none, and enforces the WhatsApp-message rules in code.
+
+Summaries work for any video with speech (sermons, talks, meetings,
+documentaries), with one general-purpose layout.
 4. Saves a Markdown copy next to the original video straight away, and
    once the video has arrived, puts a Google Doc next to it in Drive,
    tagged so a crash can't duplicate it.
@@ -41,9 +45,9 @@ upload and captions are never affected.
 
 **Project Type**: desktop-app (single Wails project)
 
-**Performance Goals**: ≤10 min after captions for a 1-hour sermon, ≤30 min for 3 hours, on an 8 GB Apple-silicon Mac (SC-004; measured in quickstart).
+**Performance Goals**: ≤10 min after captions for a 1-hour video, ≤30 min for 3 hours, on an 8 GB Apple-silicon Mac (SC-004; measured in quickstart).
 
-**Constraints**: $0 cost. No outside network use except the model download and the Drive upload (FR-005, SC-006). Only one model in memory at a time (FR-008, SC-007). `llama-server` peak memory about 5.5 GB or less (§2). Fixed 16k context, so memory stays flat for any sermon length (§4). The upload and caption code paths are unchanged except for the transcript hand-off hook and the shared lock.
+**Constraints**: $0 cost. No outside network use except the model download and the Drive upload (FR-005, SC-006). Only one model in memory at a time (FR-008, SC-007). `llama-server` peak memory about 5.5 GB or less (§2). Fixed 16k context, so memory stays flat for any video length (§4). The upload and caption code paths are unchanged except for the transcript hand-off hook and the shared lock.
 
 **Scale/Scope**: Single user, one summary job at a time, one engine.
 
@@ -68,7 +72,7 @@ upload and captions are never affected.
 ### Documentation (this feature)
 
 ```text
-specs/006-sermon-summaries/
+specs/006-video-summaries/
 ├── plan.md
 ├── research.md
 ├── data-model.md
@@ -88,13 +92,13 @@ internal/
 │   ├── summary.go                # Summary + PartNotes structs (= JSON schemas, §3–§4); Summarizer interface (§13)
 │   ├── server.go                 # start/stop llama-server on 127.0.0.1:<free port>, wait-ready, nice 10, kill on cancel (§1)
 │   ├── local.go                  # localSummarizer: single pass or parts→combine via /v1/chat/completions + json_schema
-│   ├── prompt.go                 # system prompts (part notes, combine, single pass) + reference example (§12)
+│   ├── prompt.go                 # general-purpose system prompts (part notes, combine, single pass), no worked example (§12)
 │   ├── transcript.go             # SRT → "[mm:ss] text"; split into ~20-min parts on cue boundaries (§4, §10)
-│   ├── verify.go                 # quote check; reference certainty + 66-book check (§5, §6)
+│   ├── verify.go                 # quote check; drop unsaid references; certainty + 66-book check for Bible refs (§5, §6)
 │   ├── share.go                  # enforce share-message rules: strip emoji/timestamps, reject "transcript" (§12)
 │   ├── render.go                 # Summary → HTML (Google Doc) and Markdown (local copy) (§11)
 │   ├── worker.go                 # job runner + state machine + retries + restart recovery
-│   ├── testdata/reference-2026-10-04.md
+│   ├── testdata/reference-sermon-2026-10-04.md, reference-aksum.md
 │   └── *_test.go
 ├── captions/worker.go            # + TranscriptReady/NoTranscript hooks; take heavywork lock around transcription
 ├── drive/summarydoc.go           # NEW: find-by-tag, free name, create Google Doc from HTML

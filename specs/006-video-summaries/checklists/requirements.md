@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Automatic Sermon Summaries
+# Specification Quality Checklist: Automatic Video Summaries
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-10-06
@@ -33,5 +33,6 @@
 
 - Revised 2026-10-06 for a zero-cost, on-Mac engine (user request "cost 0"). Re-validated: all items still pass.
 - Google Docs and Markdown are named on purpose: they are user-visible deliverables. The engine itself is described only as "a free, open-source AI model that runs offline on the Mac" in the spec; llama.cpp appears only in research.md/plan.md.
-- No [NEEDS CLARIFICATION] markers. Defaults (on by default with a one-time download prompt, English-only, sermon-only, parts-then-combine for long sermons) are recorded in Clarifications and Assumptions.
+- No [NEEDS CLARIFICATION] markers. Defaults (on by default with a one-time download prompt, English-only, main-content-only, parts-then-combine for long sermons) are recorded in Clarifications and Assumptions.
+- Revised again 2026-10-06: summaries cover any video with speech (user request); references and takeaways sections are conditional (FR-002b), and SC-010 checks no invented Bible content on non-religious videos. Re-validated: all items pass.
 - Depends on Feature 005: the transcript, local-copy rules, model downloader, and engine packaging come from it.

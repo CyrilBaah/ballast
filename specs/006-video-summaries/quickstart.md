@@ -1,4 +1,4 @@
-# Quickstart: Validating Automatic Sermon Summaries
+# Quickstart: Validating Automatic Video Summaries
 
 **Feature**: [spec.md](./spec.md) | **Plan**: [plan.md](./plan.md)
 
@@ -7,9 +7,13 @@
 - Feature 005 (captions) working on an Apple-silicon Mac.
 - `export BALLAST_LLAMA_SERVER=/opt/homebrew/bin/llama-server` for
   `wails dev` (Homebrew llama.cpp; research.md §15).
-- The real 43-minute sermon `Paster Joseph Ayertey.mp4`, plus a 3-hour+
-  recording.
-- The reference summary `internal/summaries/testdata/reference-2026-10-04.md`.
+- Test videos of different kinds:
+  - the real 43-minute sermon `Paster Joseph Ayertey.mp4`;
+  - the 13-minute non-religious `Aksum.mp4`;
+  - a lecture or meeting recording of your choice;
+  - a 3-hour+ recording.
+- The reference summaries in `internal/summaries/testdata/`:
+  `reference-sermon-2026-10-04.md` and `reference-aksum.md`.
 
 **Warning**: `wails dev` uses your real Ballast database and keychain. Use
 a test Drive folder.
@@ -40,19 +44,21 @@ a real model. It covers:
 
 ## Scenario 0: Pick the model (research.md §2) — before pinning
 
-For each candidate model, run `llama-server` by hand on today's
-transcript with the schema and prompt, then record:
+First, write `reference-aksum.md` by hand from `Aksum.mp4`'s transcript.
+Then, for each candidate model, run `llama-server` by hand on **both**
+transcripts with the schema and prompt, and record:
 - peak memory;
 - time taken;
 - whether the JSON is valid;
 - how many quotes pass the check;
 - any invented references;
-- a side-by-side read of the result against the reference summary.
+- a side-by-side read of each result against its reference summary;
+- that `Aksum.mp4`'s summary has no Bible section (SC-010).
 
 Choose the best one that meets SC-004 on the 8 GB M2, get the
 maintainer's approval, and pin it.
 
-## Scenario 1: First summary of a real sermon (Stories 1 and 3)
+## Scenario 1: First summaries — a sermon and a non-religious video (Stories 1 and 3)
 
 1. Fresh state. Settings shows summaries **on** with the notice.
 2. Upload `Paster Joseph Ayertey.mp4`.
@@ -70,6 +76,14 @@ maintainer's approval, and pin it.
    timestamps, no announcements, ready to send (SC-009).
 7. **Expect**: the summary is ready within 10 minutes of captions finishing
    (SC-004). Record the time.
+8. Upload `Aksum.mp4`. **Expect**:
+   - `Aksum — Summary` with an overview, main points, quotes, title,
+     description, and share message;
+   - **no** Bible section and no invented references;
+   - a takeaways section only if the narrator actually asks the viewer to
+     do something (FR-002b, SC-010).
+9. Upload the lecture or meeting recording. **Expect**: a sensible summary
+   with no sermon-style wording.
 
 ## Scenario 2: Failures never affect the upload or captions (Story 2)
 
@@ -80,12 +94,12 @@ maintainer's approval, and pin it.
    summaries unavailable; uploads and captions behave normally.
 3. Cancel an upload after the local summary exists. **Expect**: nothing in
    Drive, and the `.md` stays.
-4. Upload a video with no speech. **Expect**: "No transcript to summarise".
+4. Upload a video with no speech. **Expect**: "No speech to summarise".
 5. Quit mid-summary and reopen. **Expect**: it resumes (FR-017).
 6. Decline the download prompt (fresh state). **Expect**: summaries switch
    off, and the video and captions are unaffected.
 
-## Scenario 3: Long sermon (SC-003, SC-004)
+## Scenario 3: Long video (SC-003, SC-004)
 
 Upload the 3-hour+ recording. **Expect**: it is processed in parts, the
 main points include at least one point from each hour, and it is ready

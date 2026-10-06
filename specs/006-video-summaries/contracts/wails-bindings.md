@@ -60,7 +60,7 @@ are on. `UploadCancel` and upload failure cancel it, keeping any local
 
 ## UI contract
 
-- **Settings → "Sermon summaries"**: an on-by-default switch and the
+- **Settings → "Video summaries"**: an on-by-default switch and the
   FR-014 notice: "Summaries are written on this Mac for free. Nothing but
   the finished summary leaves your computer. Summaries of long or unclear
   recordings may be less detailed." When `available` is false, the switch
