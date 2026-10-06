@@ -119,7 +119,7 @@ description: "Task list for Automatic Video Summaries"
   - mirrors `internal/captions/worker.go`: one job at a time, the consent gate, the shared `modelfetch` download (with its own fetch lock), `heavywork.Acquire` around the server's lifetime, `parts_done` checkpoints, verify, share-message rules, render, local `.md` via a shared free-name helper, wait for the video, adopt-or-create the Google Doc, and cleanup;
   - exposes `Enqueue(uploadID)`, `TranscriptReady(uploadID, srtPath)` (which copies the transcript into the job folder), `NoTranscript(uploadID, reason)`, `VideoSucceeded`, `AnswerConsent`, `Cancel`, `Retry`;
   - makes T017 pass.
-- [ ] T028 [US1] `app_summaries.go`:
+- [X] T028 [US1] `app_summaries.go`:
   - start the worker beside captions, including in `DebugRestart`;
   - create a summary job wherever a caption job is created;
   - wire captions' `OnTranscriptReady` / `OnNoTranscript` to the summaries worker;
@@ -167,13 +167,13 @@ description: "Task list for Automatic Video Summaries"
 
 ## Phase 5: User Story 3 — turn summaries on or off (P2)
 
-- [ ] T040 [P] [US3] `app_summaries_test.go`:
+- [X] T040 [P] [US3] `app_summaries_test.go`:
   - on by default;
   - off means no summary job is created;
   - declining the download turns summaries off and cancels waiting jobs;
   - turning back on accepts consent and starts a background download (stubbed);
   - turning on is rejected when unavailable.
-- [ ] T041 [US3] Add `SummariesSetEnabled` to `app_summaries.go` (makes T040 pass); regenerate bindings.
+- [X] T041 [US3] Add `SummariesSetEnabled` to `app_summaries.go` (makes T040 pass); regenerate bindings.
 - [ ] T042 [US3] Add a "Video summaries" section to `frontend/src/ui/views/settings.ts`, with the switch and the FR-014 notice, and the unavailable reason when it applies.
 - [ ] T043 [US3] Extend `summaries.spec.ts` for the Settings section, including the unavailable state.
 

@@ -19,7 +19,7 @@ func TestVerifyKeepsTracedQuotesAndDropsInventedOnes(t *testing.T) {
 	s := &Summary{Quotes: []Quote{
 		{Text: "Even in prison, the Lord was with him.", StartSeconds: 33*60 + 5, SourceText: "Even in prison. The Lord was with him."},
 		{Text: "Trust God, whatever comes.", StartSeconds: 42 * 60, SourceText: "We must continue to trust in God no matter the difficulties"},
-		{Text: "God will make you rich.", StartSeconds: 42 * 60, SourceText: "God will make you rich"},                   // never said
+		{Text: "God will make you rich.", StartSeconds: 42 * 60, SourceText: "God will make you rich"},         // never said
 		{Text: "Even in prison…", StartSeconds: 10 * 60, SourceText: "Even in prison. The Lord was with him."}, // said, but not near 10:00
 	}}
 	r := Verify(s, sermonTranscript())
@@ -39,8 +39,8 @@ func TestVerifyReferences(t *testing.T) {
 	s := &Summary{References: []Reference{
 		{Kind: "bible", Reference: "Romans 8:28", HeardAs: "Romans chapter 8 and verse 28", Certain: true},
 		{Kind: "bible", Reference: "Hebrews 11:24–26", HeardAs: "Hebrews chapter 24, verse 26", Certain: false},
-		{Kind: "bible", Reference: "John 3:16", HeardAs: "John 3:16", Certain: true},                             // never said
-		{Kind: "bible", Reference: "Hezekiah 4:2", HeardAs: "Romans chapter 8 and verse 28", Certain: true},      // not a book
+		{Kind: "bible", Reference: "John 3:16", HeardAs: "John 3:16", Certain: true},                        // never said
+		{Kind: "bible", Reference: "Hezekiah 4:2", HeardAs: "Romans chapter 8 and verse 28", Certain: true}, // not a book
 		{Kind: "book", Reference: "The Periplus", HeardAs: "Paul says as often as you come before the Lord", Certain: true},
 	}}
 	r := Verify(s, sermonTranscript())

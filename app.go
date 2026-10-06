@@ -18,6 +18,7 @@ import (
 	"ballast/internal/keychain"
 	"ballast/internal/logging"
 	"ballast/internal/storage"
+	"ballast/internal/summaries"
 
 	"github.com/pkg/browser"
 	oauth2pkg "golang.org/x/oauth2"
@@ -54,6 +55,11 @@ type App struct {
 	// captionsAvailability reports whether captions can run on this
 	// machine; swapped in tests.
 	captionsAvailability func() (ok bool, reason, binPath string)
+
+	// summaries writes a summary of every captioned video (Feature 006).
+	summaries             *summaries.Worker
+	summariesStop         context.CancelFunc
+	summariesAvailability func() (ok bool, reason, binPath string)
 	// encKey encrypts token columns at rest and is loaded from the OS
 	// keychain at startup. It stays in memory only, never on disk.
 	encKey []byte
@@ -101,9 +107,10 @@ func (a *App) resetAutoRestarts() {
 // NewApp creates a new App application struct.
 func NewApp() *App {
 	return &App{
-		autoRestarted:        make(map[int64]bool),
-		running:              make(map[int64]*uploadRun),
-		captionsAvailability: captions.Availability,
+		autoRestarted:         make(map[int64]bool),
+		running:               make(map[int64]*uploadRun),
+		captionsAvailability:  captions.Availability,
+		summariesAvailability: summaries.Availability,
 	}
 }
 
@@ -135,6 +142,7 @@ func (a *App) startup(ctx context.Context) {
 		a.db = db
 	}
 	a.startCaptions()
+	a.startSummaries()
 
 	key, err := keychain.GetOrCreateKey()
 	if err != nil {
@@ -149,6 +157,9 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) shutdown(ctx context.Context) {
 	if a.captionsStop != nil {
 		a.captionsStop()
+	}
+	if a.summariesStop != nil {
+		a.summariesStop()
 	}
 	if a.db != nil {
 		if err := a.db.Close(); err != nil {
@@ -561,6 +572,9 @@ type UploadListItemDTO struct {
 	// Caption is the upload's captioning state, absent when it has none
 	// (Feature 005 contracts/wails-bindings.md).
 	Caption *events.CaptionJob `json:"caption,omitempty"`
+	// Summary is the upload's summary state, absent when it has none
+	// (Feature 006 contracts/wails-bindings.md).
+	Summary *events.SummaryJob `json:"summary,omitempty"`
 }
 
 // UploadListRecent returns up to 50 uploads, most recent first, for the
@@ -598,6 +612,7 @@ func (a *App) UploadListRecent() ([]UploadListItemDTO, error) {
 			item.FailureReason = *u.FailureReason
 		}
 		item.Caption = a.captionJobFor(u.ID)
+		item.Summary = a.summaryJobFor(u.ID)
 		items = append(items, item)
 	}
 	return items, nil
@@ -1244,6 +1259,10 @@ func (a *App) DebugRestart() error {
 		a.captionsStop()
 		a.captionsStop = nil
 	}
+	if a.summariesStop != nil {
+		a.summariesStop()
+		a.summariesStop = nil
+	}
 	if a.db != nil {
 		if err := a.db.Close(); err != nil {
 			logging.Warn("error closing database during DebugRestart", "error", err)
@@ -1261,6 +1280,7 @@ func (a *App) DebugRestart() error {
 	}
 	a.db = db
 	a.startCaptions()
+	a.startSummaries()
 
 	key, err := keychain.GetOrCreateKey()
 	if err != nil {

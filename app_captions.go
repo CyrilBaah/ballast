@@ -64,6 +64,17 @@ func (a *App) startCaptions() {
 		},
 		Emit:              func(j events.CaptionJob) { events.EmitCaptionsUpdated(a.ctx, j) },
 		EmitConsentNeeded: func(size int64) { events.EmitCaptionsConsentNeeded(a.ctx, size) },
+		// Summaries (Feature 006) follow the transcript.
+		OnTranscriptReady: func(id int64, srt string) {
+			if a.summaries != nil {
+				a.summaries.TranscriptReady(id, srt)
+			}
+		},
+		OnNoTranscript: func(id int64, reason string) {
+			if a.summaries != nil {
+				a.summaries.NoTranscript(id, reason)
+			}
+		},
 	})
 	ctx, cancel := context.WithCancel(a.ctx)
 	a.captionsStop = cancel
@@ -77,8 +88,16 @@ func (a *App) enqueueCaptions(uploadID int64) {
 	if a.captions == nil {
 		return
 	}
-	if _, err := a.captions.Enqueue(uploadID); err != nil {
+	j, err := a.captions.Enqueue(uploadID)
+	if err != nil {
 		logging.Warn("could not create caption job", "uploadId", uploadID, "error", err)
+		return
+	}
+	// A summary needs a transcript, so only videos being captioned get one.
+	if j != nil && j.Status != storage.CaptionFailed && a.summaries != nil {
+		if _, err := a.summaries.Enqueue(uploadID); err != nil {
+			logging.Warn("could not create summary job", "uploadId", uploadID, "error", err)
+		}
 	}
 }
 
@@ -86,6 +105,9 @@ func (a *App) enqueueCaptions(uploadID int64) {
 func (a *App) captionsVideoSucceeded(uploadID int64) {
 	if a.captions != nil {
 		a.captions.VideoSucceeded(uploadID)
+	}
+	if a.summaries != nil {
+		a.summaries.VideoSucceeded(uploadID)
 	}
 }
 
@@ -95,6 +117,9 @@ func (a *App) captionsVideoSucceeded(uploadID int64) {
 func (a *App) cancelCaptions(uploadID int64) {
 	if a.captions != nil {
 		a.captions.Cancel(uploadID)
+	}
+	if a.summaries != nil {
+		a.summaries.Cancel(uploadID)
 	}
 }
 
