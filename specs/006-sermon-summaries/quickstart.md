@@ -4,13 +4,12 @@
 
 ## Prerequisites
 
-- Feature 005 (captions) working on an Apple-silicon Mac (see its
-  quickstart).
-- An Anthropic API key with a little credit, from the Anthropic console.
-- Test videos: the real 43-minute sermon (`Paster Joseph Ayertey.mp4`),
-  plus one 3-hour+ recording.
-- The reference summary in `internal/summaries/testdata/reference-2026-10-04.md`
-  (the version shared to the church group).
+- Feature 005 (captions) working on an Apple-silicon Mac.
+- `export BALLAST_LLAMA_SERVER=/opt/homebrew/bin/llama-server` for
+  `wails dev` (Homebrew llama.cpp; research.md §15).
+- The real 43-minute sermon `Paster Joseph Ayertey.mp4`, plus a 3-hour+
+  recording.
+- The reference summary `internal/summaries/testdata/reference-2026-10-04.md`.
 
 **Warning**: `wails dev` uses your real Ballast database and keychain. Use
 a test Drive folder.
@@ -22,72 +21,80 @@ go test ./...
 cd frontend && npx tsc --noEmit
 ```
 
-The Go suite covers the following without spending money; every model
-call is a fake `Summarizer`:
-- building transcript text from an SRT (research.md §10);
-- quote verification: kept, dropped, and none left (§4);
-- uncertain references going into the "Check before sharing" list and
-  never into `share_message` (§5);
-- the share message having no emojis and no `[mm:ss]` markers (FR-002a);
-- the error mapping 401/402/403/429/529/refusal/max_tokens to the right
-  outcome and retry behaviour (§8), using an `httptest` server that returns
-  the API's error bodies;
-- the SummaryJob state machine: wait for captions, retry, cancel, restart;
-- HTML and Markdown rendering;
-- Google Doc naming, `(2)` handling, and adopting an existing doc by tag (§11).
+The Go suite uses a fake `Summarizer` and a fake `llama-server` (an
+`httptest` server that speaks the chat-completions shape). It never loads
+a real model. It covers:
+- SRT → transcript text, and splitting into parts on cue boundaries (§4, §10);
+- the combine flow and restart from `parts_done`;
+- quote verification: kept, dropped, none (§5);
+- uncertain and invalid-book references going to "Check before sharing",
+  never into the share message (§6);
+- share-message enforcement: emojis and timestamps stripped, a "transcript"
+  mention rejected (§12);
+- failure mapping and retries: bad JSON, timeout, load failure → one
+  re-download, out of memory (§8);
+- the heavy-work lock: a summary waits while captions run, and captions
+  always go first (§7);
+- the state machine, cancel, consent decline, Try again;
+- HTML/Markdown rendering, and Google Doc naming and adopt-by-tag (§11).
 
-## Scenario 1: Set up and summarise a real sermon (Stories 1 and 3)
+## Scenario 0: Pick the model (research.md §2) — before pinning
 
-1. Settings → Sermon summaries is **off** by default. Upload a short video
-   and confirm no summary line and no traffic to `api.anthropic.com`.
-2. Enter a wrong key. **Expect**: "Key rejected", nothing stored.
-3. Enter a real key. **Expect**: "Key works" within a few seconds, shown
-   masked. Turn summaries on (SC-008: under 2 minutes in total).
-4. Upload `Paster Joseph Ayertey.mp4`.
-5. **Expect**: the summary line moves through waiting for captions →
-   writing → "ready on this Mac". `Paster Joseph Ayertey — Summary.md`
-   appears next to the video before the upload finishes (FR-007), and after
-   the upload a Google Doc `Paster Joseph Ayertey — Summary` appears in the
-   Drive folder.
-6. **Review against the reference**: all seven parts are present. Main
-   points cover the Joseph story and the five actions. Matthew 28:18–20
-   and Hebrews 11:24–26 are listed under "Check before sharing" with what
-   was heard. Every quote matches a transcript passage within 30 s
-   (SC-002).
-7. Copy the share message into a WhatsApp chat with yourself. **Expect**:
-   bold renders, no emojis, no timestamps, no announcements (thanks, food
-   event, retired mothers), ready to send without edits (SC-009).
-8. Record `input_tokens` and `output_tokens` from the job. Work out the
-   cost at $4 / $20 per million tokens and update the Settings estimate if
-   it falls outside $0.10–$0.40 (research.md §9).
-9. **Expect**: the summary is ready within 5 minutes of captions finishing
-   (SC-004).
+For each candidate model, run `llama-server` by hand on today's
+transcript with the schema and prompt, then record:
+- peak memory;
+- time taken;
+- whether the JSON is valid;
+- how many quotes pass the check;
+- any invented references;
+- a side-by-side read of the result against the reference summary.
+
+Choose the best one that meets SC-004 on the 8 GB M2, get the
+maintainer's approval, and pin it.
+
+## Scenario 1: First summary of a real sermon (Stories 1 and 3)
+
+1. Fresh state. Settings shows summaries **on** with the notice.
+2. Upload `Paster Joseph Ayertey.mp4`.
+3. **Expect**: captions run first. The summary line reads "waiting for
+   captions", then the download prompt appears once with the model size.
+   Accept.
+4. **Expect**: "downloading model", then "writing — N%", then
+   `Paster Joseph Ayertey — Summary.md` next to the video before the upload
+   finishes, then the Google Doc in Drive after the upload.
+5. **Review against the reference**: all seven parts are present. Main
+   points cover the Joseph story and the five actions. Matthew 28:18–20 and
+   Hebrews 11:24–26 are under "Check before sharing". Quotes match
+   transcript passages within 30 s (SC-002).
+6. Paste the share message into WhatsApp. **Expect**: no emojis, no
+   timestamps, no announcements, ready to send (SC-009).
+7. **Expect**: the summary is ready within 10 minutes of captions finishing
+   (SC-004). Record the time.
 
 ## Scenario 2: Failures never affect the upload or captions (Story 2)
 
-1. Revoke the key in the Anthropic console, then upload a video.
-   **Expect**: upload and captions succeed, and the summary shows "Your AI
-   key was rejected or removed". Settings flags the key.
-2. Turn Wi-Fi off just as summarising starts. **Expect**: automatic
-   retries (`attempts` rises), then a failure with "Try again". Wi-Fi on,
-   then Try again. **Expect**: the summary is made without redoing captions.
-3. Cancel an upload after its summary's local copy exists. **Expect**:
-   nothing in Drive, and the `.md` stays (FR-016).
+1. Corrupt the model file and upload a video. **Expect**: one automatic
+   re-download, then a summary. If the re-download is blocked (Wi-Fi off),
+   the summary fails with a reason, and the upload and captions succeed.
+2. Point `BALLAST_LLAMA_SERVER` at a bad path. **Expect**: Settings shows
+   summaries unavailable; uploads and captions behave normally.
+3. Cancel an upload after the local summary exists. **Expect**: nothing in
+   Drive, and the `.md` stays.
 4. Upload a video with no speech. **Expect**: "No transcript to summarise".
-5. Quit Ballast mid-summary and reopen. **Expect**: it resumes (FR-017).
+5. Quit mid-summary and reopen. **Expect**: it resumes (FR-017).
+6. Decline the download prompt (fresh state). **Expect**: summaries switch
+   off, and the video and captions are unaffected.
 
-## Scenario 3: Long sermon (SC-003)
+## Scenario 3: Long sermon (SC-003, SC-004)
 
-Upload the 3-hour+ recording. **Expect**: a summary whose main points
-include at least one point from each hour, and a cost within the Settings
-estimate.
+Upload the 3-hour+ recording. **Expect**: it is processed in parts, the
+main points include at least one point from each hour, and it is ready
+within 30 minutes of captions finishing.
 
-## Scenario 4: Privacy and secrets (SC-006, SC-007)
+## Scenario 4: Zero cost and nothing leaves the Mac (SC-006, SC-007)
 
-1. While summarising, watch traffic. **Expect**: requests to
-   `api.anthropic.com` carry only text, with request sizes about the
-   transcript's size (kilobytes, not the gigabytes of the video).
-2. After setup, run
-   `grep -r "sk-ant" ~/Library/Application\ Support/ballast/` and
-   `sqlite3 … "select * from setting"`. **Expect**: no key anywhere. The key
-   is only in Keychain Access under `ballast` / `anthropic-api-key`.
+1. While summarising, watch network traffic. **Expect**: `llama-server`
+   talks only to `127.0.0.1`, and there are no outside connections except
+   the final Google Doc upload to Drive.
+2. Upload two videos back to back and watch processes. **Expect**:
+   `whisper-cli` and `llama-server` never run at the same time.

@@ -31,6 +31,7 @@
 
 ## Notes
 
-- Claude (Anthropic), Google Docs, and Markdown are named on purpose: the user chose the provider, and the summary's formats are user-visible deliverables. All three appear only in Assumptions, so FR-019 keeps the provider replaceable.
-- No [NEEDS CLARIFICATION] markers. Defaults chosen for the summary format (Google Doc in Drive, Markdown locally), English-only summaries, off-by-default, one provider in this version, and limited automatic retries are recorded in Assumptions and can be revisited in `/speckit-clarify`.
-- Depends on Feature 005: the transcript and the local-copy placement rules come from it.
+- Revised 2026-10-06 for a zero-cost, on-Mac engine (user request "cost 0"). Re-validated: all items still pass.
+- Google Docs and Markdown are named on purpose: they are user-visible deliverables. The engine itself is described only as "a free, open-source AI model that runs offline on the Mac" in the spec; llama.cpp appears only in research.md/plan.md.
+- No [NEEDS CLARIFICATION] markers. Defaults (on by default with a one-time download prompt, English-only, sermon-only, parts-then-combine for long sermons) are recorded in Clarifications and Assumptions.
+- Depends on Feature 005: the transcript, local-copy rules, model downloader, and engine packaging come from it.

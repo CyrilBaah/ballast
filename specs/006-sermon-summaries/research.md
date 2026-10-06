@@ -1,57 +1,73 @@
 # Research: Automatic Sermon Summaries
 
-**Feature**: [spec.md](./spec.md) | **Plan**: [plan.md](./plan.md) | **Date**: 2026-10-06
+**Feature**: [spec.md](./spec.md) | **Plan**: [plan.md](./plan.md) | **Date**: 2026-10-06 (revised for the free, on-Mac design)
 
-Model names, prices, and API behaviour were checked against the bundled
-Claude API reference (cached 2026-09-25), not recalled. Items marked
-**measured** come from running the real 43-minute sermon
-(`Paster Joseph Ayertey.mp4`) through the Feature 005 pipeline and
-summarising it by hand on 2026-10-06.
+Items marked **measured** come from running the real 43-minute sermon
+(`Paster Joseph Ayertey.mp4`) through Feature 005's pipeline and
+summarising it by hand on 2026-10-06. The hand-made summary shared to the
+church group that day is the quality reference.
 
-## §1 Talking to Claude: the official Go SDK
+## §1 Engine: llama.cpp's `llama-server`, run as a helper program
 
-**Decision**: Use the official Anthropic Go SDK,
-`github.com/anthropics/anthropic-sdk-go`, with the API key passed
-explicitly through `option.WithAPIKey(...)` from the keychain (§6). Never
-read it from the environment.
+**Decision**: Summarise with [llama.cpp](https://github.com/ggml-org/llama.cpp)'s
+`llama-server` (MIT), run as a child process exactly like Feature 005 runs
+`whisper-cli`:
+- Ballast starts it for a summary job, bound to `127.0.0.1` on a free
+  port, with the model file and a context size.
+- It sends one or more requests to the server's OpenAI-compatible
+  `/v1/chat/completions` endpoint.
+- It stops the process when the job ends.
 
-**Rationale**: An official SDK exists for Go. It gives typed errors
-(`*anthropic.Error` with `StatusCode` and `Type()`), built-in retries for
-429/5xx, streaming, and request types that keep up with API changes.
-Hand-written HTTP would duplicate all of that.
+Nothing listens beyond the Mac itself, and nothing leaves it (FR-005).
 
-**Cost to the project**: one new Go module dependency, justified in
-plan.md Complexity Tracking.
+**Confirmed locally**: Homebrew's llama.cpp 0.6.0 (build 11429) is already
+installed on the maintainer's Mac and provides `llama-server`. Its
+documentation shows the chat endpoint accepts `response_format` of type
+`json_schema` and enforces the schema with a grammar.
 
-## §2 Model and settings
+**Rationale**: It is free with no account or limit, runs on Apple's GPU,
+and the output can be forced into the exact JSON shape needed (§3). It
+follows the same child-process pattern as captions: no cgo, a crash can't
+take down Ballast or an upload, a clean kill on cancel, and lower CPU
+priority.
 
-**Decision**:
-- Model `claude-opus-5-5` (the current default Opus): 1M-token context,
-  $4 / $20 per million input / output tokens.
-- Effort is set **explicitly** to `medium`. This model defaults to `medium`,
-  but the code states it so changes are deliberate. It is raised only if
-  the quickstart review (Scenario 1) finds summaries missing content.
-- Thinking is left at the model's default (adaptive). It can't be disabled
-  on this model.
-- The request is streamed and the final message collected, as recommended
-  for long inputs. `max_tokens` is 16,000.
-- **Server-side refusal fallback** is on (`fallbacks: "default"` with beta
-  `server-side-fallback-2026-07-01`): if a safety classifier declines a
-  sermon, another model serves it in the same call. Sermon text is unlikely
-  to trigger this, but a refusal must never silently produce no summary.
-  Any `refusal` that still comes back is reported as "The AI service
-  declined to summarise this sermon".
-- No prompt caching: each sermon is a single one-off request, so there is
-  no repeated prefix worth caching.
+**Alternatives considered**:
+- *Ollama*: the same engine underneath, but installed and run as a
+  separate background service the user has to manage. That is more moving
+  parts for no gain.
+- *Apple's on-device Foundation Models framework*: free and built in, but
+  it needs Swift bridging, requires Apple Intelligence to be enabled, and
+  has a context window of only a few thousand tokens, too small for a
+  sermon transcript.
+- *A paid cloud model*: rejected by the user ("cost 0"). The engine
+  interface (§13) leaves room to add one later as an option.
 
-The exact Go field names for `OutputConfig.Effort`, `fallbacks: "default"`,
-and the output format are confirmed against the installed SDK at
-implementation time (compile and fix), not guessed here.
+## §2 Choosing the model: tested, not guessed
+
+**Decision**: Pick the model by testing it during implementation (task
+list), not now. Candidates are open, instruction-tuned models of about
+3–8 billion parameters, 4-bit quantised GGUF files of at most about 5 GB,
+whose licence allows free use. Each candidate summarises today's real
+transcript and is scored on:
+
+1. **Fits**: peak memory of `llama-server` stays under about 5.5 GB on the
+   8 GB M2, run after the speech model has exited (§7).
+2. **Follows the shape**: schema-valid JSON every time (§3).
+3. **Honest**: at least 3 quotes pass the transcript check (§4); no
+   invented Bible references (compared with the reference).
+4. **Useful**: a reviewer judges the main points and share message close
+   to the reference summary (SC-009, SC-002).
+5. **Fast enough**: meets SC-004 (≤10 min for a 1-hour sermon).
+
+The winner's download URL is pinned to a specific repository revision,
+with its size and SHA-256 compiled in, the same discipline as the speech
+model (Feature 005, research.md §7). The maintainer approves the choice
+before it is pinned.
 
 ## §3 Getting structured output back
 
-**Decision**: Request structured outputs (`output_config.format` with a
-JSON schema) so the response is always valid JSON matching one schema:
+**Decision**: Every request uses `response_format: {type: "json_schema", json_schema: {schema: …}}`,
+so the server can only produce JSON in this shape:
 
 ```text
 overview: string
@@ -61,152 +77,160 @@ bible_references: [{ reference: string, heard_as: string, certain: boolean }]
 quotes: [{ text: string, start_seconds: number, source_text: string }]
 title: string
 description: string
-share_message: string                     // the ready-to-share WhatsApp text (FR-002a)
+share_message: string                     // the WhatsApp-ready text (FR-002a)
 ```
 
-Go then builds every output from this JSON: the Google Doc, the local
-Markdown copy, and the "Check before sharing" note.
+Go builds everything from this JSON: the Google Doc, the local Markdown,
+and the "Check before sharing" note.
 
-**Rationale**: The model never has to format three documents correctly at
-once, and Ballast can check the result (§4, §5) before anything is saved.
+**Rationale**: With small models, free-form formatting is where quality
+breaks down first. Enforcing the shape with a grammar removes that failure
+mode entirely, and Go then applies the share-message rules itself (§12).
 
-## §4 Keeping quotes honest (FR-003, SC-002)
+## §4 Long transcripts: summarise in parts, then combine
 
-**Decision**: Each quote comes with `source_text` (the exact transcript
-words it came from) and `start_seconds`. Before saving, Go checks that
-`source_text` matches the transcript near `start_seconds`:
-- it normalises both (lower-case, punctuation removed);
+**Decision**: Run the server with a 16,384-token context.
+- Transcripts of up to about 9,000 tokens (roughly 60 minutes) are
+  summarised in **one pass**.
+- Longer ones are split on cue boundaries into parts of about 20 minutes.
+  Each part produces **notes** in a smaller schema: points, references,
+  and candidate quotes with `source_text` and `start_seconds`. A final
+  **combine** pass turns all the notes into the full schema.
+
+**Measured**: the 43-minute transcript is about 5,400 words, roughly
+7,000 tokens, so it fits one pass. A 3-hour sermon (about 40,000 tokens)
+becomes about 9 parts and one combine pass.
+
+**Rationale**: Small models lose track of very long inputs, and a large
+context costs memory on an 8 GB Mac. Parts plus a combine pass cover the
+whole sermon (FR-004, SC-003) within fixed memory, and each finished part
+is saved, so a restart resumes from the next part (FR-017).
+
+## §5 Keeping quotes honest (FR-003, SC-002)
+
+**Decision**: Each quote carries `source_text` (the exact transcript words)
+and `start_seconds`. Go checks that `source_text` matches the transcript
+near `start_seconds`:
+- it normalises both (lower-case, no punctuation);
 - it requires at least 80% of `source_text`'s words to appear, in order,
-  within transcript cues from 30 s before to 30 s after.
+  within cues from 30 s before to 30 s after.
 
-A quote that fails is **dropped**, not "fixed". If every quote fails, the
-summary still saves with "No quotes could be verified".
+Quotes that fail are **dropped**. If none survive, the summary says "No
+quotes could be verified".
 
-**Rationale**: The clarification allows tidied quotes, so `text` can't be
-checked word for word. `source_text` can be, and that is what makes "each
-quote traces back to the transcript" testable by code, not only by a
-reviewer.
+**Rationale**: Small models paraphrase and occasionally invent. This
+check is what makes "nothing is invented" hold regardless of model
+quality.
 
-**Measured**: the hand summary's four tidied quotes each map to a clear
-source passage (e.g. "Even in prison, the Lord was with him." ← `[33:xx]
-"Even in prison. The Lord was with him."`), so the rule is achievable on
-real sermons.
+## §6 Bible references and "Check before sharing" (FR-003a)
 
-## §5 Bible references and the "Check before sharing" note (FR-003a)
+**Decision**: The model returns `heard_as` and `certain` for each
+reference. Uncertain ones appear under their likely reference, and in a
+separate "Check before sharing" list with what was heard. That list is
+never inside `share_message`. As a cheap extra safeguard, Go checks that
+each book name is a real Bible book (a fixed list of 66). A reference that
+fails is moved to "Check before sharing" with `certain: false`.
 
-**Decision**: The model returns each reference with `heard_as` (what the
-transcript actually says) and `certain`. References with `certain: false`
-(e.g. heard "Hebrews chapter 24, verse 26", likely Hebrews 11:24–26) appear
-in the summary under their likely reference **and** in a separate "Check
-before sharing" list showing `heard_as`. That list goes in the Google Doc
-and the local copy, never inside `share_message`.
+**Measured**: the real sermon had "Matthew 28, verse 30" (for Matthew
+28:20) and "Hebrews chapter 24, verse 26" (for Hebrews 11:24–26). These
+are exactly the cases this note exists for.
 
-**Measured**: the real sermon had exactly this case. "Matthew 28, verse 30"
-and "Genesis… magic chapter 28" both meant Matthew 28:18–20, and the
-Hebrews reference above was garbled. Without the flag, the hand summary
-would have shared wrong references.
+## §7 One model at a time
 
-## §6 Where the API key lives
+**Decision**: Feature 005's captions worker and this feature's summaries
+worker share one **heavy-work lock**, a small `internal/heavywork` package
+holding a single mutex. Whichever model is running holds it, so the
+speech model and the summary model never run together (FR-008, SC-007).
+Summary jobs wait at the `waiting_for_engine` phase while captions run.
+Captions of the next video always come first, because a summary waiting a
+little is harmless.
 
-**Decision**: Store the key in the OS keychain, through the same
-`go-keyring` library `internal/keychain` already uses for the database
-encryption key, under service `ballast` and account `anthropic-api-key`.
-Ballast's database stores only whether summaries are on and which
-provider is used, never the key. The UI receives only a masked form
-(`sk-ant-…a1b2`).
+**Rationale**: On 8 GB, the speech model (measured peak 2.3 GB) plus a
+4–5 GB summary model plus Ballast and the OS would push the Mac into heavy
+swapping and slow everything, including the upload. Running them in turn
+is simple and safe.
 
-**Rationale**: This is the same protection as the Google sign-in
-(Constitution IV: secrets in the OS keychain, not next to the database).
+## §8 Failures and retries
 
-## §7 Checking a key (FR-014)
+| Failure | Ballast does |
+|---|---|
+| Server won't start, or fails to load the model | delete the model and re-download once (it's "damaged", FR-013); if it fails again, fail: "The summary model couldn't be loaded" |
+| Not enough memory (process killed, or load error naming memory) | fail: "Not enough free memory to write the summary — close other apps and try again" |
+| Response not schema-valid, or empty | retry up to 3 attempts in total, then fail: "The summary model couldn't produce a usable summary" |
+| A request takes more than 20 minutes | kill, count as an attempt |
+| Model download errors | the same resume-and-retry as Feature 005's model download |
 
-**Decision**: Validate a newly entered key by listing models
-(`GET /v1/models` via the SDK's `Models.List`). It is free (no tokens), and
-a 401 means the key is rejected. A successful listing does not prove the
-account has credit, so the user is told "Key works" and a later 402 is
-reported per §8.
+Every failure leaves the upload and captions untouched and offers "Try
+again" (FR-009).
 
-## §8 Errors and retries
+## §9 Cost
 
-| Response | Meaning | Ballast does |
-|---|---|---|
-| 401 `authentication_error` | key rejected or revoked | fail: "Your AI key was rejected or removed", and flag Settings |
-| 402 `billing_error` | out of credit or payment problem | fail: "Your AI account is out of credit" |
-| 403 `permission_error` | key not allowed to use this | fail: "Your AI key isn't allowed to do this" |
-| 429, 5xx, 529 `overloaded_error`, network errors | temporary | the SDK's own retries (2), then Ballast retries the whole request up to 3 times with 1, 5, then 15 minutes between, then fails "The AI service is unavailable; try again later" (FR-010) |
-| `stop_reason: refusal` after fallback | declined | fail with the decline reason (§2) |
-| `stop_reason: max_tokens` | output cut off | one retry with `max_tokens` 32,000, then fail |
-
-Errors are classified with `errors.As` into `*anthropic.Error` and switched
-on `StatusCode`, per the SDK's documented Go pattern. The retry cap keeps
-a failing service from running up repeated charges (spec Assumptions).
-
-## §9 Cost per sermon (FR-015)
-
-**Measured transcript size**: the 43-minute sermon's transcript is about
-5,400 words, roughly 7,000 tokens. A 3-hour sermon is about 30,000 words,
-roughly 40,000 tokens.
-
-**Estimate** at $4 / $20 per million tokens, assuming 3,000–8,000 output
-tokens including thinking:
-
-| Sermon | Input | Output | Total |
-|---|---|---|---|
-| 45 minutes | ~$0.03 | $0.06–0.16 | **~$0.10–0.20** |
-| 3 hours | ~$0.16 | $0.06–0.16 | **~$0.20–0.35** |
-
-Settings shows "about $0.10–$0.40 per sermon". The real `usage` figures
-from quickstart Scenario 1 replace the estimate before release.
+**Zero.** No account, key, or usage charge. The only costs are a
+one-time download (the chosen model, about 2–5 GB, pinned in §2) and the
+Mac's own time and power. Time per sermon is measured in quickstart
+Scenario 1 against SC-004.
 
 ## §10 Transcript input format
 
-**Decision**: Send the transcript as plain text with one line per
-caption cue, prefixed `[mm:ss]` or `[h:mm:ss]`, built from Feature 005's
-`.srt`. The system prompt tells the model that the transcript is data to
-summarise, never instructions to follow. Cues that Feature 005 collapsed
-as repeats appear once.
-
-**Rationale**: Timestamps are what make quotes checkable (§4). Dropping
-SRT numbering and arrows saves about 30% of tokens.
+Plain text, one line per caption cue, prefixed `[mm:ss]` or `[h:mm:ss]`,
+built from Feature 005's `.srt`, with repeats Feature 005 collapsed shown
+once. The system prompt says the transcript is content to summarise,
+never instructions. This also keeps the input small, saving about 30%
+against raw SRT.
 
 ## §11 The summary in Drive: a Google Doc
 
-**Decision**: Build simple HTML (headings, paragraphs, lists, a bold
-"Check before sharing" box) from the JSON and upload it with
-`files.create`, `mimeType: application/vnd.google-apps.document`, and HTML
-as the media, so Drive converts it to a Google Doc. It is named
-"<video base> — Summary", with `(2)` and so on if taken (same rule as
-Feature 005), and tagged `appProperties.ballastSummaryFor=<upload id>` so a
-crash never creates a duplicate (adopt before create, as for caption
-files). The local copy is the same content as Markdown,
-`"<video base> — Summary.md"`, saved next to the original video.
+Build simple HTML from the JSON and create it with `files.create`
+(`mimeType: application/vnd.google-apps.document`, HTML media) so Drive
+converts it to a Google Doc named "<video base> — Summary" (or `(2)` and
+so on), tagged `appProperties.ballastSummaryFor=<upload id>` and adopted
+instead of duplicated after a crash. The local copy is the same content
+as Markdown, `"<video base> — Summary.md"`, next to the original video.
+This uses the existing Drive client; no new dependency.
 
-**Rationale**: Drive reliably converts HTML into a Google Doc, keeping
-headings and lists. Markdown import is less predictable.
+## §12 Prompt and post-processing
 
-## §12 Prompt content (the summary's shape)
-
-The system prompt fixes what the hand-made summary showed works for this
-church:
+The system prompt fixes the shape that worked for this church:
 - English only, sermon only, no announcements;
 - an overview of 3–5 sentences;
 - 4–7 main points;
-- the "What we must do" actions the preacher gave;
+- the preacher's "What we must do" actions;
 - 3–6 quotes;
 - a title under 70 characters;
 - a description under 600 characters;
-- a share message in WhatsApp format: `*bold*` headings, numbered points,
-  dash lists, **no emojis**, no timestamps, no notes about the transcript,
-  closing with a one-line blessing.
+- a share message: `*bold*` headings, numbered points, dash lists, no
+  emojis, no timestamps, no notes about the transcript, closing with a
+  one-line blessing.
 
-The hand-made version (shared to the church group on 2026-10-06) is kept as
-the reference example in `internal/summaries/testdata/` for the prompt's
-example and for review in quickstart Scenario 1.
+The hand-made reference summary is the prompt's single example
+(`internal/summaries/testdata/reference-2026-10-04.md`).
 
-## §13 Provider can change later (FR-019)
+Because small models drift, Go **enforces** the share-message rules after
+generation rather than trusting the prompt: it strips emoji characters,
+strips `[mm:ss]`-style timestamps, and rejects a share message mentioning
+"transcript". A rejected message counts as an unusable answer (§8).
 
-**Decision**: A small Go interface
-`Summarizer { Validate(ctx) error; Summarize(ctx, transcript) (Summary, error) }`
-with one implementation, `anthropicSummarizer`. The `Summary` struct is
-the JSON schema in §3, so a later Gemini implementation only has to return
-the same struct. No second provider is built now (Constitution V).
+## §13 Engine interface (FR-019)
+
+`Summarizer { Ready() error; Summarize(ctx, transcript) (Summary, error) }`
+with one implementation, `localSummarizer` (llama-server). The `Summary`
+struct is the §3 schema, so an optional paid cloud engine can be added
+later without changing the output, the job flow, or the UI. None is built
+now.
+
+## §14 Shared model download
+
+Feature 005's model downloader (resume via `Range`, size and SHA-256
+check, rename, disk-space precheck, progress) moves into a shared
+`internal/modelfetch` package used by both features, rather than being
+copied. The summary model is stored at
+`<app data>/models/<pinned file name>.gguf`.
+
+## §15 Shipping the engine
+
+`llama-server` is built from a pinned llama.cpp release as a static arm64
+binary with Metal, by the same build script as `whisper-cli`
+(`scripts/build-whisper.sh` becomes `scripts/build-engines.sh`), and
+copied into `Ballast.app/Contents/MacOS/`. During development,
+`BALLAST_LLAMA_SERVER` points at Homebrew's
+`/opt/homebrew/bin/llama-server`.
