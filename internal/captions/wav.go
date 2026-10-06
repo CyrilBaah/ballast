@@ -68,7 +68,7 @@ func OpenWAV(path string) (*WAV, error) {
 			if _, err := io.ReadFull(f, body); err != nil || size < 16 {
 				return nil, errNotWAV
 			}
-			if binary.LittleEndian.Uint16(body[0:2]) != 1 {
+			if !isPCM(body) {
 				return nil, errNotWAV
 			}
 			w.Channels = int(binary.LittleEndian.Uint16(body[2:4]))
@@ -92,6 +92,20 @@ func OpenWAV(path string) (*WAV, error) {
 			offset++
 		}
 	}
+}
+
+// isPCM reports whether a fmt chunk describes integer PCM: format 1, or
+// WAVE_FORMAT_EXTENSIBLE (0xFFFE) whose sub-format GUID starts with 1 --
+// which afconvert writes for some inputs (measured on a 44.1 kHz mono AAC
+// video).
+func isPCM(fmtBody []byte) bool {
+	switch binary.LittleEndian.Uint16(fmtBody[0:2]) {
+	case 1:
+		return true
+	case 0xFFFE:
+		return len(fmtBody) >= 26 && binary.LittleEndian.Uint16(fmtBody[24:26]) == 1
+	}
+	return false
 }
 
 func (w *WAV) frameBytes() int64 { return int64(w.Channels) * 2 }

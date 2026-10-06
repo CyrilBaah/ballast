@@ -145,3 +145,37 @@ func TestDefaultPieceSettings(t *testing.T) {
 		t.Fatalf("PieceLength = %v, CutSearchWindow = %v; research.md §4 says 10 min and ±5 s", PieceLength, CutSearchWindow)
 	}
 }
+
+func TestOpenWAVAcceptsExtensibleFormat(t *testing.T) {
+	// The header afconvert really wrote for Aksum.mp4 (44.1 kHz mono AAC in):
+	// WAVE_FORMAT_EXTENSIBLE with the PCM sub-format GUID.
+	le := binary.LittleEndian
+	var b []byte
+	b = append(b, "RIFF"...)
+	b = le.AppendUint32(b, 0)
+	b = append(b, "WAVEfmt "...)
+	b = le.AppendUint32(b, 40)
+	b = le.AppendUint16(b, 0xFFFE)
+	b = le.AppendUint16(b, 1)
+	b = le.AppendUint32(b, 16000)
+	b = le.AppendUint32(b, 32000)
+	b = le.AppendUint16(b, 2)
+	b = le.AppendUint16(b, 16)
+	b = le.AppendUint16(b, 22) // cbSize
+	b = le.AppendUint16(b, 16) // valid bits
+	b = le.AppendUint32(b, 4)  // channel mask
+	b = append(b, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71)
+	b = append(b, "data"...)
+	b = le.AppendUint32(b, 32000)
+	b = append(b, make([]byte, 32000)...)
+	path := filepath.Join(t.TempDir(), "ext.wav")
+	os.WriteFile(path, b, 0o644)
+
+	w, err := OpenWAV(path)
+	if err != nil {
+		t.Fatalf("OpenWAV(extensible PCM): %v", err)
+	}
+	if w.Duration() != time.Second {
+		t.Fatalf("Duration() = %v, want 1s", w.Duration())
+	}
+}
