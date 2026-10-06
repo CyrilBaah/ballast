@@ -53,8 +53,8 @@ description: "Task list for Automatic Video Summaries"
 - [X] T006 [P] Write `internal/storage/summary_test.go`, mirroring `caption_test.go`: create/one-per-upload; validation (ended means no phase; failed needs a note; drive id and link set together); transitions only while active; `parts_done <= part_count`; `attempts`; `ListActiveSummaryJobs`; cascade delete with the upload.
 - [X] T007 Implement `internal/storage/summary.go` (`SummaryJob`, statuses and phases from data-model.md, CRUD, transitions, `ResetSummaryForRetry` which sets attempts to 0 and returns to `waiting_for_engine`) to make T006 pass.
 - [X] T008 [P] Add `summaries_enabled` (default `true`) and `summary_model_consent` (default `unasked`) with typed helpers to `internal/storage/setting.go`, with tests in `setting_test.go`.
-- [ ] T009 [P] Add `SummariesConsentNeeded = "summaries:consent-needed"`, `SummariesUpdated = "summaries:updated"`, a `SummaryJob` payload matching `SummaryJobDTO`, and emit helpers to `internal/events/events.go`.
-- [ ] T010 [P] Write `internal/summaries/engine_test.go` and implement `engine.go` plus the platform files. `Availability()` finds `llama-server` via `BALLAST_LLAMA_SERVER` or next to the executable, is unavailable on anything but darwin/arm64, and also requires captions to be available ("Summaries need captions, which aren't available on this system yet").
+- [X] T009 [P] Add `SummariesConsentNeeded = "summaries:consent-needed"`, `SummariesUpdated = "summaries:updated"`, a `SummaryJob` payload matching `SummaryJobDTO`, and emit helpers to `internal/events/events.go`.
+- [X] T010 [P] Write `internal/summaries/engine_test.go` and implement `engine.go` plus the platform files. `Availability()` finds `llama-server` via `BALLAST_LLAMA_SERVER` or next to the executable, is unavailable on anything but darwin/arm64, and also requires captions to be available ("Summaries need captions, which aren't available on this system yet").
 
 **Checkpoint**: `go test ./internal/storage ./internal/summaries` passes.
 
@@ -66,18 +66,18 @@ description: "Task list for Automatic Video Summaries"
 
 ### Tests ⚠️ write first, confirm they fail
 
-- [ ] T011 [P] [US1] `internal/summaries/transcript_test.go`:
+- [X] T011 [P] [US1] `internal/summaries/transcript_test.go`:
   - SRT becomes `[mm:ss] text` lines (`[h:mm:ss]` past an hour);
   - a transcript under about 9,000 tokens is a single part;
   - a longer one splits into parts of about 20 minutes on cue boundaries;
   - token estimate is about 4 characters per token (research.md §4, §10).
-- [ ] T012 [P] [US1] `internal/summaries/verify_test.go`:
+- [X] T012 [P] [US1] `internal/summaries/verify_test.go`:
   - quotes are kept when 80% or more of `source_text` words appear in order within ±30 s of `start_seconds`, and dropped otherwise; "No quotes could be verified" when none survive;
   - references whose `heard_as` isn't in the transcript are dropped;
   - a `bible` reference with an unknown book goes to check-before-sharing;
   - `certain: false` goes to check-before-sharing (research.md §5, §6).
-- [ ] T013 [P] [US1] `internal/summaries/share_test.go`: emoji are stripped; `[12:03]` and `(1:02:03)` style timestamps are stripped; a share message mentioning "transcript" is rejected as unusable (research.md §12).
-- [ ] T014 [P] [US1] `internal/summaries/render_test.go`:
+- [X] T013 [P] [US1] `internal/summaries/share_test.go`: emoji are stripped; `[12:03]` and `(1:02:03)` style timestamps are stripped; a share message mentioning "transcript" is rejected as unusable (research.md §12).
+- [X] T014 [P] [US1] `internal/summaries/render_test.go`:
   - HTML (for the Google Doc) and Markdown (local copy) contain every core part;
   - the references and takeaways sections are left out entirely when empty (FR-002b);
   - "Check before sharing" appears only when there are guesses, and never inside the share message;
@@ -103,12 +103,12 @@ description: "Task list for Automatic Video Summaries"
 
 ### Implementation
 
-- [ ] T018 [P] [US1] `internal/summaries/summary.go`: the `Summary`, `Reference`, `Quote`, `MainPoint`, and `PartNotes` structs; the JSON schemas from research.md §3–§4; the `Summarizer` interface (§13).
-- [ ] T019 [P] [US1] `internal/summaries/transcript.go` (makes T011 pass).
-- [ ] T020 [P] [US1] `internal/summaries/verify.go`, including the 66-book list (makes T012 pass).
-- [ ] T021 [P] [US1] `internal/summaries/share.go` (makes T013 pass).
+- [X] T018 [P] [US1] `internal/summaries/summary.go`: the `Summary`, `Reference`, `Quote`, `MainPoint`, and `PartNotes` structs; the JSON schemas from research.md §3–§4; the `Summarizer` interface (§13).
+- [X] T019 [P] [US1] `internal/summaries/transcript.go` (makes T011 pass).
+- [X] T020 [P] [US1] `internal/summaries/verify.go`, including the 66-book list (makes T012 pass).
+- [X] T021 [P] [US1] `internal/summaries/share.go` (makes T013 pass).
 - [ ] T022 [P] [US1] `internal/summaries/prompt.go`: general-purpose system prompts for part notes, combine, and single pass, with no worked example (research.md §12).
-- [ ] T023 [P] [US1] `internal/summaries/render.go` (makes T014 pass).
+- [X] T023 [P] [US1] `internal/summaries/render.go` (makes T014 pass).
 - [ ] T024 [US1] `internal/summaries/server.go` and `local.go`:
   - start `llama-server -m <model> -c 16384 --host 127.0.0.1 --port <free>`, lower its priority, wait for `/health`, and kill it on ctx cancel or when the job ends;
   - `localSummarizer` runs a single pass, or parts then combine, through `/v1/chat/completions` with `json_schema`;

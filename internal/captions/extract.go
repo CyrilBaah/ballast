@@ -27,7 +27,7 @@ func ExtractAudio(ctx context.Context, videoPath, outWAV string) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("captions: start afconvert: %w", err)
 	}
-	lowerPriority(cmd.Process.Pid)
+	LowerPriority(cmd.Process.Pid)
 	if err := cmd.Wait(); err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()

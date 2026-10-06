@@ -16,15 +16,23 @@ import (
 // folder can't be written to, the copy goes to downloadsDir instead. It
 // returns where the copy was saved.
 func SaveLocalCopy(videoPath, srtPath, downloadsDir string) (string, error) {
-	base := strings.TrimSuffix(filepath.Base(videoPath), filepath.Ext(videoPath))
-	saved, err := copyToFreeName(srtPath, filepath.Dir(videoPath), base, ".srt")
+	return SaveBesideVideo(videoPath, srtPath, downloadsDir, "", ".srt")
+}
+
+// SaveBesideVideo copies src next to videoPath as "<video base><suffix><ext>"
+// under the first free name, falling back to downloadsDir if the video's
+// folder can't be written to. Shared by caption files and summaries
+// (Feature 006 FR-007).
+func SaveBesideVideo(videoPath, src, downloadsDir, suffix, ext string) (string, error) {
+	base := strings.TrimSuffix(filepath.Base(videoPath), filepath.Ext(videoPath)) + suffix
+	saved, err := copyToFreeName(src, filepath.Dir(videoPath), base, ext)
 	if err == nil {
 		return saved, nil
 	}
 	if !errors.Is(err, os.ErrPermission) && !errors.Is(err, os.ErrNotExist) {
 		return "", err
 	}
-	return copyToFreeName(srtPath, downloadsDir, base, ".srt")
+	return copyToFreeName(src, downloadsDir, base, ext)
 }
 
 // FreeName returns the first of "base.ext", "base (2).ext", "base (3).ext"

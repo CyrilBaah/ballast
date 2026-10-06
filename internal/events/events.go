@@ -20,6 +20,9 @@ const (
 
 	CaptionsConsentNeeded = "captions:consent-needed"
 	CaptionsUpdated       = "captions:updated"
+
+	SummariesConsentNeeded = "summaries:consent-needed"
+	SummariesUpdated       = "summaries:updated"
 )
 
 // AuthStatus is the payload of AuthChanged, also returned by Auth.GetStatus/Auth.SignIn.
@@ -148,4 +151,29 @@ func EmitCaptionsUpdated(ctx context.Context, job CaptionJob) {
 // speech-model download prompt (FR-019).
 func EmitCaptionsConsentNeeded(ctx context.Context, modelSizeBytes int64) {
 	runtime.EventsEmit(ctx, CaptionsConsentNeeded, CaptionsConsentNeededPayload{ModelSizeBytes: modelSizeBytes})
+}
+
+// SummaryJob is one video's summary state as the frontend sees it -- the
+// payload of SummariesUpdated and Feature 006's SummaryJobDTO.
+type SummaryJob struct {
+	UploadID        int64  `json:"uploadId"`
+	Status          string `json:"status"`
+	Phase           string `json:"phase,omitempty"`
+	ProgressPercent int    `json:"progressPercent"`
+	DriveFileName   string `json:"driveFileName,omitempty"`
+	DriveFileLink   string `json:"driveFileLink,omitempty"`
+	LocalCopyPath   string `json:"localCopyPath,omitempty"`
+	Note            string `json:"note,omitempty"`
+	CanRetry        bool   `json:"canRetry"`
+}
+
+// EmitSummariesUpdated sends a summary job's full current state.
+func EmitSummariesUpdated(ctx context.Context, job SummaryJob) {
+	runtime.EventsEmit(ctx, SummariesUpdated, job)
+}
+
+// EmitSummariesConsentNeeded asks the frontend to show the one-time
+// summary-model download prompt (Feature 006 FR-013).
+func EmitSummariesConsentNeeded(ctx context.Context, modelSizeBytes int64) {
+	runtime.EventsEmit(ctx, SummariesConsentNeeded, CaptionsConsentNeededPayload{ModelSizeBytes: modelSizeBytes})
 }

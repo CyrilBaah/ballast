@@ -49,7 +49,7 @@ func (t Transcriber) Transcribe(ctx context.Context, pieceWAV, language, outBase
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("captions: start whisper-cli: %w", err)
 	}
-	lowerPriority(cmd.Process.Pid)
+	LowerPriority(cmd.Process.Pid)
 
 	var lastLine string
 	sc := bufio.NewScanner(stderr)
