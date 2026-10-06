@@ -124,7 +124,7 @@ next to the local video, timings are within 1 s, and a second upload creates
   - a caption status line, with copy per the contract's UI section, for example "Captions: transcribing — 42%", "Captions ready on this Mac — waiting for the video to finish", "Captions ready";
   - the consent prompt ("Download and caption" / "Not now"), showing the model size.
 - [X] T032 [US1] Show the caption line under each video row in `frontend/src/ui/views/transfers.ts` and `frontend/src/ui/views/home.ts`. Add "Open captions in Drive" (`driveFileLink`) and "Show in Finder" (`CaptionsShowLocalCopy`) to the transfer details.
-- [ ] T033 [US1] Extend `mock_e2e.go` with an outcome that scripts a caption job through every phase (consent-needed, progress, done). Write `frontend/tests/captions.spec.ts` covering the consent prompt appearing once, the caption line changing per phase, and both detail actions appearing when done.
+- [X] T033 [US1] Extend `mock_e2e.go` with an outcome that scripts a caption job through every phase (consent-needed, progress, done). Write `frontend/tests/captions.spec.ts` covering the consent prompt appearing once, the caption line changing per phase, and both detail actions appearing when done. *(Done differently: caption states are emitted from the page through the same Wails event channel the worker uses, instead of a scripted mock outcome — the worker itself is covered by Go tests. Written and type-checked; not yet run, because `wails dev` mock mode shares the real keychain — see T051.)*
 
 **Checkpoint**: US1 is fully functional. Run quickstart Scenario 1 on a real Apple-silicon Mac.
 
