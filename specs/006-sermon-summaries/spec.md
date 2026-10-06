@@ -14,6 +14,15 @@ Google Drive offers its own AI summary of a video, but it is unreliable for the 
 
 **Depends on**: Feature 005 (Automatic Video Captions). A summary is made only from a transcript that Feature 005 produced.
 
+## Clarifications
+
+### Session 2026-10-06
+
+- Q: Should the quotes in a summary be exactly as transcribed, or lightly tidied into clear English? → A: Lightly tidied into clear English with the meaning and time kept; each quote must still trace back to the passage of the transcript it came from, so nothing is invented.
+- Q: Should each summary also include a ready-to-share version for a church WhatsApp group? → A: Yes — a second, shorter section written for church members, plain text with WhatsApp bold formatting and no emojis, ready to copy and paste.
+- Q: When a Bible reference in the recording is unclear, how should the summary handle it? → A: Use the most likely correct reference in the summary and share-ready text, and list those guessed references separately for the user to check before sharing.
+- Q: Should a summary include the church announcements, or only the sermon? → A: Sermon only; announcements, thanks, and notices are left out.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Every sermon gets a summary next to it in Drive (Priority: P1)
@@ -22,15 +31,17 @@ A user uploads a recorded sermon as usual. Once its captions are made, Ballast p
 
 **Why this priority**: It is the whole point of the feature: a dependable summary for every sermon, including the long ones Drive refuses to summarise.
 
-**Independent Test**: With summaries turned on and a valid key entered, upload a sermon video. Confirm that a summary appears in the same Drive folder, named after the video, containing all six parts, and that every quote in it can be found word-for-word in the caption file at the stated time.
+**Independent Test**: With summaries turned on and a valid key entered, upload a sermon video. Confirm that a summary appears in the same Drive folder, named after the video, containing all seven parts; that every quote matches the meaning of the transcript at the stated time; and that the ready-to-share message can be pasted into a WhatsApp group unchanged.
 
 **Acceptance Scenarios**:
 
 1. **Given** summaries are turned on and set up, **When** a video's captions are made, **Then** a summary is produced automatically and, once the video is in Drive, placed in the same folder, named after the video (e.g. `Sermon.mp4` → "Sermon — Summary").
-2. **Given** a summary has been produced, **When** the user opens it, **Then** it contains: an overview paragraph, the main points, the Bible references mentioned, key quotes each with its time in the video, a suggested title, and a suggested description.
-3. **Given** a sermon of 3 hours or more, **When** its summary is produced, **Then** it covers the whole sermon, including points made in the last hour, and not just the beginning.
-4. **Given** a summary is being made, **When** the user looks at the transfer, **Then** they see the summary's status (waiting for captions, in progress, ready, or could not be made) separately from the upload's and the captions' status.
-5. **Given** a summary is ready, **When** the user opens the transfer's details, **Then** they can open it in Drive, or show the copy on their Mac.
+2. **Given** a summary has been produced, **When** the user opens it, **Then** it contains: an overview paragraph, the main points, the Bible references mentioned, key quotes each with its time in the video, a suggested title, a suggested description, and a ready-to-share message for a church group.
+3. **Given** a summary has been produced, **When** the user copies its ready-to-share message into a WhatsApp group, **Then** it reads cleanly with bold headings, contains no emojis, no timestamps, no notes about the transcript, and no church announcements, and needs no editing before sending.
+4. **Given** the recording made a Bible reference unclear, **When** the summary is produced, **Then** the most likely reference is used in the text, and a separate "Check before sharing" note (outside the ready-to-share message) lists each guessed reference and what was actually heard.
+5. **Given** a sermon of 3 hours or more, **When** its summary is produced, **Then** it covers the whole sermon, including points made in the last hour, and not just the beginning.
+6. **Given** a summary is being made, **When** the user looks at the transfer, **Then** they see the summary's status (waiting for captions, in progress, ready, or could not be made) separately from the upload's and the captions' status.
+7. **Given** a summary is ready, **When** the user opens the transfer's details, **Then** they can open it in Drive, or show the copy on their Mac.
 
 ---
 
@@ -87,6 +98,7 @@ A long sermon can take hours to upload. As soon as its summary is ready, a copy 
 
 ### Edge Cases
 
+- **Announcements and thanks during the service**: left out of every part of the summary (sermon only).
 - **Mixed English and Twi/Ga sermons**: the summary is written in English. Passages whose transcript is unclear are summarised only as far as the transcript supports; nothing is invented to fill gaps.
 - **Very long transcripts (3+ hours, ~30,000+ words)**: summarised as a whole. If a transcript is ever too long for the provider to take in one go, it is summarised in parts that are then combined, and the result still covers the whole sermon.
 - **Long stretches of worship music or announcements**: not treated as sermon content; the summary focuses on the preaching.
@@ -103,8 +115,10 @@ A long sermon can take hours to upload. As soon as its summary is ready, a copy 
 ### Functional Requirements
 
 - **FR-001**: The system MUST produce a summary automatically for every video whose captions Feature 005 completes with speech, when summaries are turned on and set up, with no action from the user beyond starting the upload.
-- **FR-002**: Each summary MUST contain six parts: an overview paragraph, the main points, the Bible references mentioned (or "None mentioned"), key quotes each with its time in the video, a suggested title, and a suggested description suitable for YouTube or social media.
-- **FR-003**: Every quote in a summary MUST appear word-for-word in the transcript, and its stated time MUST match when it was said; the summary MUST NOT present invented quotes or references.
+- **FR-002**: Each summary MUST contain seven parts: an overview paragraph, the main points, the Bible references mentioned (or "None mentioned"), key quotes each with its time in the video, a suggested title, a suggested description suitable for YouTube or social media, and a ready-to-share message for a church group. It MUST cover the sermon only: announcements, thanks, and notices are left out.
+- **FR-002a**: The ready-to-share message MUST be a shorter, self-contained text written for church members: plain text using WhatsApp bold (`*like this*`) for headings, no emojis, no timestamps, no notes about the transcript or its accuracy, and no announcements. It MUST be ready to paste without editing.
+- **FR-003**: Quotes MAY be lightly tidied into clear English (fixing transcription errors and grammar) but MUST keep the speaker's meaning, MUST each trace back to an identifiable passage of the transcript, and MUST carry the time that passage was said. The summary MUST NOT present invented quotes or references.
+- **FR-003a**: Where a Bible reference was unclear in the recording, the summary MUST use the most likely correct reference and MUST list each such guess, with what was actually heard, in a separate "Check before sharing" note that is not part of the ready-to-share message.
 - **FR-004**: The summary MUST cover the whole sermon, however long, not only its opening portion.
 - **FR-005**: Only the transcript text MAY be sent to the AI provider; the audio and video MUST never leave the user's computer for this feature.
 - **FR-006**: The summary MUST be placed in the same Drive folder as its video, named after the video, only after the video has been confirmed in Drive; it MUST NOT overwrite an existing file.
@@ -125,7 +139,7 @@ A long sermon can take hours to upload. As soon as its summary is ready, a copy 
 ### Key Entities *(include if feature involves data)*
 
 - **Summary job**: The work of summarising one video. Linked to exactly one upload and its caption job. Has a status (waiting for captions, in progress, ready, failed, cancelled), a failure reason when failed, the number of attempts made, the provider used, and once ready, references to the Drive copy and the local copy. Survives app restarts.
-- **Summary**: The produced document with its six parts (FR-002), named after its video, stored in the video's Drive folder and next to the original video on the user's computer.
+- **Summary**: The produced document with its seven parts (FR-002) plus any "Check before sharing" note (FR-003a), named after its video, stored in the video's Drive folder and next to the original video on the user's computer.
 - **Summary settings**: On/off (default off) and the chosen provider, remembered across restarts. The API key itself is held separately in the secure password store, never with the other settings.
 
 ## Success Criteria *(mandatory)*
@@ -133,7 +147,8 @@ A long sermon can take hours to upload. As soon as its summary is ready, a copy 
 ### Measurable Outcomes
 
 - **SC-001**: With summaries set up, 100% of sermons whose captions complete with speech get a summary in their Drive folder, including those of 3 hours or more and those Drive's own summary cannot handle.
-- **SC-002**: In 100% of tested summaries, every quote appears word-for-word in the transcript within 5 seconds of its stated time, and every Bible reference listed is actually mentioned in the transcript.
+- **SC-002**: In 100% of tested summaries, every quote can be matched by a reviewer to a transcript passage with the same meaning within 30 seconds of its stated time, and every Bible reference listed is either clearly said in the transcript or appears in the "Check before sharing" note.
+- **SC-009**: In 100% of tested summaries, the ready-to-share message contains no emojis, timestamps, transcript notes, or announcements, and a reviewer judges it ready to send without edits.
 - **SC-003**: For a 3-hour sermon, the main points include at least one point from each hour of the sermon.
 - **SC-004**: A summary is ready within 5 minutes of its captions finishing, for a sermon of up to 3 hours, on a normal internet connection.
 - **SC-005**: In 100% of tested summary failures (no internet, rejected key, out of credit, service outage), the video upload and captions still succeed and the user sees a specific reason.
