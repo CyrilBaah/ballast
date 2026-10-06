@@ -101,3 +101,29 @@ test('a non-video upload has no caption line', async ({ page }) => {
   await signInAndUpload(page, name);
   await expect(page.locator('.transfer-card', { hasText: name }).locator('[data-caption-line]')).toHaveCount(0);
 });
+
+test('Settings explains when captions are unavailable and disables the controls', async ({ page }) => {
+  await signInAndUpload(page, `settings-${Date.now()}.pdf`);
+  const settings = await page.evaluate(() => (window as any).go.main.App.CaptionsGetSettings());
+  test.skip(settings.available, 'this run has a speech engine configured');
+  await page.click('[data-nav="settings"]');
+  const section = page.locator('[data-captions-settings]');
+  await expect(section).toBeVisible();
+  await expect(section.locator('[data-captions-notice]')).toContainText(settings.unavailableReason);
+  await expect(section.locator('[data-caption-lang="auto"]')).toBeDisabled();
+});
+
+test('caption settings survive a restart', async ({ page }) => {
+  await signInAndUpload(page, `persist-${Date.now()}.pdf`);
+  const before = await page.evaluate(() => (window as any).go.main.App.CaptionsGetSettings());
+  test.skip(!before.available, 'needs BALLAST_WHISPER_CLI pointing at a speech engine');
+  await page.click('[data-nav="settings"]');
+  await page.click('[data-caption-lang="auto"]');
+  await expect(page.locator('[data-caption-lang="auto"]')).toHaveClass(/active/);
+  await page.evaluate(() => (window as any).go.main.App.DebugRestart());
+  await page.reload();
+  await page.waitForFunction(() => !!(window as any).go?.main?.App);
+  const after = await page.evaluate(() => (window as any).go.main.App.CaptionsGetSettings());
+  expect(after.language).toBe('auto');
+  await page.evaluate(() => (window as any).go.main.App.CaptionsSetLanguage('en'));
+});

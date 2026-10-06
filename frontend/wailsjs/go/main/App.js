@@ -26,6 +26,14 @@ export function CaptionsGetSettings() {
   return window['go']['main']['App']['CaptionsGetSettings']();
 }
 
+export function CaptionsSetEnabled(arg1) {
+  return window['go']['main']['App']['CaptionsSetEnabled'](arg1);
+}
+
+export function CaptionsSetLanguage(arg1) {
+  return window['go']['main']['App']['CaptionsSetLanguage'](arg1);
+}
+
 export function CaptionsShowLocalCopy(arg1) {
   return window['go']['main']['App']['CaptionsShowLocalCopy'](arg1);
 }

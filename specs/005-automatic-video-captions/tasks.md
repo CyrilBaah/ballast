@@ -184,12 +184,12 @@ Windows, and Linux.
 ### Implementation for User Story 3
 
 - [X] T042 [US3] Add `CaptionsSetEnabled` and `CaptionsSetLanguage` to `app.go`, with the consent rules from contracts/wails-bindings.md. Both reject when `Availability()` is not ok. Makes T041 pass.
-- [ ] T043 [US3] Regenerate the Wails bindings (as in T028) and add the two wrappers to `frontend/src/api/captions.ts`.
-- [ ] T044 [US3] Add an "Automatic captions" section to `frontend/src/ui/views/settings.ts` containing:
+- [X] T043 [US3] Regenerate the Wails bindings (as in T028) and add the two wrappers to `frontend/src/api/captions.ts`.
+- [X] T044 [US3] Add an "Automatic captions" section to `frontend/src/ui/views/settings.ts` containing:
   - the switch and the "Caption language" choice (English / Automatic);
   - the FR-015 notice: made on this computer, lower accuracy for languages other than English including Twi and Ga, saved as a separate `.srt` next to the video that can be attached in Drive's player.
   When `available` is false, disable both controls and show `unavailableReason` (FR-017).
-- [ ] T045 [US3] Extend `frontend/tests/captions.spec.ts`: the settings persist across `DebugRestart`, and a mock outcome with `available=false` shows the unavailable message with disabled controls.
+- [X] T045 [US3] Extend `frontend/tests/captions.spec.ts`: the settings persist across `DebugRestart`, and a mock outcome with `available=false` shows the unavailable message with disabled controls.
 
 **Checkpoint**: US1–US3 complete.
 

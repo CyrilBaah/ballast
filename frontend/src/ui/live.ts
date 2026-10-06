@@ -23,8 +23,14 @@ import type { DriveFolder, StorageQuota } from '../api/drive';
 import { PickLocal, PickLocalMultiple } from '../api/files';
 import type { LocalFileRef } from '../api/files';
 import { Start, GetRecoverable, ConfirmRestart, Cancel, Delete, Retry, ListRecent } from '../api/upload';
-import { AnswerModelDownload, GetSettings as getCaptionSettings, ShowLocalCopy } from '../api/captions';
-import type { CaptionJob } from '../api/captions';
+import {
+    AnswerModelDownload,
+    GetSettings as getCaptionSettings,
+    SetEnabled as setCaptionsEnabledApi,
+    SetLanguage as setCaptionLanguageApi,
+    ShowLocalCopy,
+} from '../api/captions';
+import type { CaptionJob, CaptionSettings } from '../api/captions';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 import { toPlainLanguage } from '../errors';
 import type { UploadStatus } from './components';
@@ -294,6 +300,7 @@ async function hydrateAfterSignIn(): Promise<void> {
         /* non-fatal -- live events still drive updates from here */
     }
     void refreshStorageQuota();
+    void refreshCaptionSettings();
     notify();
 }
 
@@ -585,7 +592,30 @@ export let captionConsent: { sizeBytes: number } | null = null;
 export async function answerCaptionConsent(accept: boolean): Promise<void> {
     captionConsent = null;
     notify();
-    await AnswerModelDownload(accept);
+    captionSettings = await AnswerModelDownload(accept);
+    notify();
+}
+
+/** The caption settings, once loaded (Settings view). */
+export let captionSettings: CaptionSettings | null = null;
+
+export async function refreshCaptionSettings(): Promise<void> {
+    try {
+        captionSettings = await getCaptionSettings();
+        notify();
+    } catch {
+        /* leave as is; the Settings view shows a loading line */
+    }
+}
+
+export async function setCaptionsEnabled(enabled: boolean): Promise<void> {
+    captionSettings = await setCaptionsEnabledApi(enabled);
+    notify();
+}
+
+export async function setCaptionLanguage(language: 'en' | 'auto'): Promise<void> {
+    captionSettings = await setCaptionLanguageApi(language);
+    notify();
 }
 
 export async function showCaptionLocalCopy(id: string): Promise<void> {

@@ -2,6 +2,8 @@ import {
     CaptionsAnswerModelDownload,
     CaptionsGetJob,
     CaptionsGetSettings,
+    CaptionsSetEnabled,
+    CaptionsSetLanguage,
     CaptionsShowLocalCopy,
 } from '../../wailsjs/go/main/App';
 import type { events, main } from '../../wailsjs/go/models';
@@ -14,3 +16,5 @@ export const GetSettings = CaptionsGetSettings;
 export const AnswerModelDownload = CaptionsAnswerModelDownload;
 export const GetJob = CaptionsGetJob;
 export const ShowLocalCopy = CaptionsShowLocalCopy;
+export const SetEnabled = CaptionsSetEnabled;
+export const SetLanguage = CaptionsSetLanguage;

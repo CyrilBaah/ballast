@@ -5,6 +5,7 @@ import { formatBytes } from '../format';
 import * as mock from '../mock-data';
 import * as live from '../live';
 import type { ViewCtx } from '../shell';
+import { toPlainLanguage } from '../../errors';
 
 export function renderSettings(container: HTMLElement, ctx: ViewCtx): void {
     const s = mock.settings;
@@ -35,6 +36,8 @@ export function renderSettings(container: HTMLElement, ctx: ViewCtx): void {
                     ${settingRow('Journal location', 'Write-ahead log that survives power loss.', `<span class="mono" style="font-size:11.5px;color:var(--color-mute)">~/.ballast/journal.db</span>`)}
                 </div>
 
+                ${captionsSection()}
+
                 <div class="card" style="margin-top:16px;padding:20px">
                     <h2 class="eyebrow">Lifetime record</h2>
                     <div class="settings-big-grid">
@@ -53,6 +56,7 @@ export function renderSettings(container: HTMLElement, ctx: ViewCtx): void {
     `;
 
     container.querySelector('#sign-out-btn')?.addEventListener('click', () => ctx.signOut());
+    wireCaptionSettings(container, ctx);
     container.querySelectorAll<HTMLElement>('[data-toggle]').forEach((el) => {
         el.addEventListener('click', () => {
             const key = el.dataset.toggle as 'autoResume' | 'verifyChecksums';
@@ -77,4 +81,47 @@ function bigStat(label: string, value: string, tone: string): string {
         <p class="tnum fg-${tone}" style="margin:0;font-size:24px;font-weight:600;letter-spacing:-0.02em">${value}</p>
         <p style="margin:2px 0 0;font-size:11.5px;color:var(--color-mute)">${label}</p>
     </div>`;
+}
+
+// Automatic captions (Feature 005, FR-009/FR-015/FR-017/FR-020).
+function captionsSection(): string {
+    const c = live.captionSettings;
+    if (!c) {
+        void live.refreshCaptionSettings();
+        return `<div class="card settings-rows" data-captions-settings><p style="margin:0;padding:16px;font-size:12px;color:var(--color-mute)">Loading caption settings…</p></div>`;
+    }
+    const disabled = !c.available;
+    const langTab = (id: 'en' | 'auto', label: string) =>
+        `<button type="button" class="filter-tab ${c.language === id ? 'active' : ''}" data-caption-lang="${id}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+    return `<div class="card settings-rows" data-captions-settings style="margin-top:16px">
+        ${settingRow(
+            'Automatic captions',
+            'Make a caption file for every video you upload, on this Mac. Saved next to the video in Drive and on your Mac.',
+            `<span ${disabled ? 'style="opacity:0.45;pointer-events:none"' : ''}>${toggleHtml(c.enabled && !disabled, 'data-captions-toggle')}</span>`,
+        )}
+        ${settingRow('Caption language', 'English works best for most videos. Automatic detects the language for each part of the video.', `<div class="filter-tabs">${langTab('en', 'English')}${langTab('auto', 'Automatic')}</div>`)}
+        <p data-captions-notice style="margin:0;padding:12px 20px 16px;font-size:11.5px;line-height:1.6;color:var(--color-mute)">${
+            disabled
+                ? `<span class="fg-coral">${c.unavailableReason ?? "Captions aren't available on this system yet"}</span>`
+                : `Captions are made on this computer, so nothing but the finished caption file leaves your Mac. Accuracy may be lower for languages other than English, including Twi and Ga. Captions are saved as a separate .srt file next to the video — in Drive, open the video, then ⋮ › Manage caption tracks to attach it.${c.modelDownloaded ? '' : ` The first video needs a one-time ${formatBytes(c.modelSizeBytes)} download.`}`
+        }</p>
+    </div>`;
+}
+
+function wireCaptionSettings(container: HTMLElement, ctx: ViewCtx): void {
+    const run = async (op: () => Promise<void>) => {
+        try {
+            await op();
+        } catch (err) {
+            ctx.showToast(toPlainLanguage(err instanceof Error ? err.message : String(err)));
+        }
+        ctx.rerender();
+    };
+    container.querySelector('[data-captions-toggle]')?.addEventListener('click', () => {
+        const on = live.captionSettings?.enabled ?? false;
+        void run(() => live.setCaptionsEnabled(!on));
+    });
+    container.querySelectorAll<HTMLButtonElement>('[data-caption-lang]').forEach((el) => {
+        el.addEventListener('click', () => void run(() => live.setCaptionLanguage(el.dataset.captionLang as 'en' | 'auto')));
+    });
 }

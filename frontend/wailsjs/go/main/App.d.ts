@@ -16,6 +16,10 @@ export function CaptionsGetJob(arg1:number):Promise<events.CaptionJob>;
 
 export function CaptionsGetSettings():Promise<main.CaptionSettingsDTO>;
 
+export function CaptionsSetEnabled(arg1:boolean):Promise<main.CaptionSettingsDTO>;
+
+export function CaptionsSetLanguage(arg1:string):Promise<main.CaptionSettingsDTO>;
+
 export function CaptionsShowLocalCopy(arg1:number):Promise<void>;
 
 export function DebugRestart():Promise<void>;
