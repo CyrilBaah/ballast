@@ -118,12 +118,12 @@ next to the local video, timings are within 1 s, and a second upload creates
   - Add the optional `caption` field to `UploadListItemDTO` in `UploadListRecent`.
   - Follow contracts/wails-bindings.md exactly. The upload itself must not wait on anything captions-related (FR-006).
 - [X] T028 [US1] Regenerate the Wails bindings (`wails generate module`) so `frontend/wailsjs/go/main/App.d.ts`/`App.js` and the models include the new methods and DTOs.
-- [ ] T029 [P] [US1] Create `frontend/src/api/captions.ts`, wrapping the new bindings and typing `CaptionSettingsDTO` and `CaptionJobDTO`.
-- [ ] T030 [US1] Extend `frontend/src/ui/live.ts`: keep caption state per upload (from `UploadListRecent`'s `caption` and `captions:updated` events), and on `captions:consent-needed` open the consent prompt.
-- [ ] T031 [US1] Add to `frontend/src/ui/components.ts`:
+- [X] T029 [P] [US1] Create `frontend/src/api/captions.ts`, wrapping the new bindings and typing `CaptionSettingsDTO` and `CaptionJobDTO`.
+- [X] T030 [US1] Extend `frontend/src/ui/live.ts`: keep caption state per upload (from `UploadListRecent`'s `caption` and `captions:updated` events), and on `captions:consent-needed` open the consent prompt.
+- [X] T031 [US1] Add to `frontend/src/ui/components.ts`:
   - a caption status line, with copy per the contract's UI section, for example "Captions: transcribing — 42%", "Captions ready on this Mac — waiting for the video to finish", "Captions ready";
   - the consent prompt ("Download and caption" / "Not now"), showing the model size.
-- [ ] T032 [US1] Show the caption line under each video row in `frontend/src/ui/views/transfers.ts` and `frontend/src/ui/views/home.ts`. Add "Open captions in Drive" (`driveFileLink`) and "Show in Finder" (`CaptionsShowLocalCopy`) to the transfer details.
+- [X] T032 [US1] Show the caption line under each video row in `frontend/src/ui/views/transfers.ts` and `frontend/src/ui/views/home.ts`. Add "Open captions in Drive" (`driveFileLink`) and "Show in Finder" (`CaptionsShowLocalCopy`) to the transfer details.
 - [ ] T033 [US1] Extend `mock_e2e.go` with an outcome that scripts a caption job through every phase (consent-needed, progress, done). Write `frontend/tests/captions.spec.ts` covering the consent prompt appearing once, the caption line changing per phase, and both detail actions appearing when done.
 
 **Checkpoint**: US1 is fully functional. Run quickstart Scenario 1 on a real Apple-silicon Mac.

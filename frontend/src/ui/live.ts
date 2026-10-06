@@ -23,6 +23,8 @@ import type { DriveFolder, StorageQuota } from '../api/drive';
 import { PickLocal, PickLocalMultiple } from '../api/files';
 import type { LocalFileRef } from '../api/files';
 import { Start, GetRecoverable, ConfirmRestart, Cancel, Delete, Retry, ListRecent } from '../api/upload';
+import { AnswerModelDownload, GetSettings as getCaptionSettings, ShowLocalCopy } from '../api/captions';
+import type { CaptionJob } from '../api/captions';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 import { toPlainLanguage } from '../errors';
 import type { UploadStatus } from './components';
@@ -42,6 +44,8 @@ export interface LiveUpload {
     awaitingConfirmationReason: string | null;
     throughputBps: number;
     startedAt: string;
+    /** The video's captioning state (Feature 005), or null if it has none. */
+    caption: CaptionJob | null;
 }
 
 export interface ActivityEntry {
@@ -133,6 +137,7 @@ function upsert(id: string, patch: Partial<LiveUpload>, seedName?: string): Live
             awaitingConfirmationReason: null,
             throughputBps: 0,
             startedAt: new Date().toISOString(),
+            caption: null,
         };
         uploadsById.set(id, u);
         uploadsOrder = [id, ...uploadsOrder];
@@ -185,6 +190,21 @@ function wireUploadEvents(): void {
         void refreshStorageQuota();
         notify();
         void advanceQueue();
+    });
+    EventsOn('captions:updated', (c: CaptionJob) => {
+        const id = String(c.uploadId);
+        const u = uploadsById.get(id);
+        if (!u) return;
+        const before = u.caption?.status;
+        u.caption = c;
+        if (before !== 'done' && c.status === 'done' && c.driveFileLink) {
+            pushActivity('success', `Captions for ${u.name} are in Drive`);
+        }
+        notify();
+    });
+    EventsOn('captions:consent-needed', (p: { modelSizeBytes: number }) => {
+        captionConsent = { sizeBytes: p.modelSizeBytes };
+        notify();
     });
     EventsOn('upload:failed', (p: { id: number; reason: string }) => {
         const id = String(p.id);
@@ -259,9 +279,17 @@ async function hydrateAfterSignIn(): Promise<void> {
                 awaitingConfirmationReason: null,
                 throughputBps: 0,
                 startedAt: item.startedAt,
+                caption: item.caption ?? null,
             });
         }
         uploadsOrder = list.map((item) => String(item.id));
+        // The worker's consent-needed event can fire before this page is
+        // listening (e.g. right after a relaunch), so also derive the
+        // prompt from what's on record.
+        if (list.some((item) => item.caption?.phase === 'awaiting_consent')) {
+            const settings = await getCaptionSettings();
+            if (settings.modelConsent === 'unasked') captionConsent = { sizeBytes: settings.modelSizeBytes };
+        }
     } catch {
         /* non-fatal -- live events still drive updates from here */
     }
@@ -549,4 +577,17 @@ export function liveStats() {
         if (u.status === 'uploading') throughputBps += u.throughputBps;
     }
     return { totalBytes, confirmedBytes, activeCount, completedCount, throughputBps };
+}
+
+/** Set while the one-time speech-model download prompt should show (FR-019). */
+export let captionConsent: { sizeBytes: number } | null = null;
+
+export async function answerCaptionConsent(accept: boolean): Promise<void> {
+    captionConsent = null;
+    notify();
+    await AnswerModelDownload(accept);
+}
+
+export async function showCaptionLocalCopy(id: string): Promise<void> {
+    await ShowLocalCopy(Number(id));
 }

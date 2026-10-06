@@ -7,6 +7,8 @@ import { icon, kindIcon, KIND_TONE, statusChip, progressBar, ring, sparkline, av
 import { formatBytes, formatDuration, formatSpeed, relativeTime } from '../format';
 import * as live from '../live';
 import type { ViewCtx } from '../shell';
+import { captionConsentBanner, captionLine } from '../captions';
+import { wireCaptionConsent } from './transfers';
 
 function greeting(): string {
     const h = new Date().getHours();
@@ -85,6 +87,7 @@ export function renderHome(container: HTMLElement, ctx: ViewCtx): void {
 
             <div class="home-body">
                 <div class="home-main-col">
+                    ${live.captionConsent ? captionConsentBanner(live.captionConsent.sizeBytes) : ''}
                     <div class="home-actions">
                         ${actionCard('choose', icon.folder('icon' + ' icon-lg'), 'Choose files', 'Pick a file to send', true)}
                         ${actionCard('lab', icon.flask('icon icon-lg'), 'Test my setup', 'Break it on purpose', false)}
@@ -120,6 +123,7 @@ export function renderHome(container: HTMLElement, ctx: ViewCtx): void {
                                             ${u.status === 'reconnecting' ? `<span class="fg-tangerine">reconnecting…</span>` : ''}
                                             ${u.status === 'awaiting_confirmation' ? `<span class="fg-tangerine">needs your decision</span>` : ''}
                                         </span>
+                                        ${captionLine(u.caption, true)}
                                     </span>
                                 </button>`;
                                       })
@@ -197,6 +201,7 @@ export function renderHome(container: HTMLElement, ctx: ViewCtx): void {
         </div>
     `;
 
+    wireCaptionConsent(container, ctx);
     container.querySelector('#home-view-all')?.addEventListener('click', () => ctx.goto('transfers'));
     container.querySelector('#home-empty-pick')?.addEventListener('click', () => ctx.openPicker());
     container.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((el) => {

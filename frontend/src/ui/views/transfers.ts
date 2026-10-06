@@ -11,6 +11,7 @@ import { formatBytes, formatDuration, formatPercent, formatSpeed, relativeTime, 
 import * as live from '../live';
 import type { LiveUpload } from '../live';
 import { toPlainLanguage } from '../../errors';
+import { captionConsentBanner, captionLine } from '../captions';
 import type { ViewCtx } from '../shell';
 
 const FILTERS: { id: 'active' | 'all' | 'secured'; label: string }[] = [
@@ -79,6 +80,7 @@ export function renderTransfers(container: HTMLElement, ctx: ViewCtx): void {
                     </div>
                 </div>
 
+                ${live.captionConsent ? captionConsentBanner(live.captionConsent.sizeBytes) : ''}
                 <div class="transfers-list">
                     ${
                         visible.length
@@ -96,6 +98,7 @@ export function renderTransfers(container: HTMLElement, ctx: ViewCtx): void {
         </div>
     `;
 
+    wireCaptionConsent(container, ctx);
     container.querySelector('#transfers-pick')?.addEventListener('click', () => ctx.openPicker());
     container.querySelector('#transfers-empty-pick')?.addEventListener('click', () => ctx.openPicker());
     container.querySelectorAll<HTMLButtonElement>('[data-filter]').forEach((el) => {
@@ -144,6 +147,11 @@ async function applyAction(action: string, id: string, ctx: ViewCtx) {
         } else if (action === 'retry') {
             await live.retryUpload(id);
             ctx.rerender();
+        } else if (action === 'open-captions') {
+            const u = live.orderedUploads().find((x) => x.id === id);
+            if (u?.caption?.driveFileLink) window.open(u.caption.driveFileLink, '_blank', 'noopener,noreferrer');
+        } else if (action === 'show-captions') {
+            await live.showCaptionLocalCopy(id);
         }
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -223,6 +231,7 @@ function transferCard(u: LiveUpload, selected: boolean): string {
                     </div>
                     <div class="transfer-card-actions">${cardActions(u, 'icon')}</div>
                 </div>
+                ${captionLine(u.caption)}
             </div>
         </div>
     </div>`;
@@ -267,7 +276,8 @@ function detailPanel(u: LiveUpload): string {
                       : `<p style="margin-top:12px;font-size:12px;font-style:italic;color:var(--color-mute)">"${STATUS_WARM[u.status]}"</p>`
             }
 
-            <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:8px">${cardActions(u, 'sm')}</div>
+            <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:8px">${cardActions(u, 'sm')}${captionActions(u)}</div>
+            ${captionLine(u.caption)}
         </div>
 
         <div class="scroll detail-panel-body">
@@ -297,4 +307,35 @@ function row(label: string, value: string): string {
         <span class="fg-faint" style="font-size:11.5px;flex-shrink:0">${label}</span>
         <span class="tnum" style="font-size:12px;color:rgba(36,31,27,0.85);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${value}</span>
     </div>`;
+}
+
+// The caption file's own actions (FR-016, FR-022), separate from the
+// video's.
+function captionActions(u: LiveUpload): string {
+    const c = u.caption;
+    if (!c) return '';
+    let out = '';
+    if (c.driveFileLink) {
+        out += button(`${icon.drive('icon')} Open captions in Drive`, { variant: 'soft', size: 'sm', attrs: 'data-detail-action="open-captions"' });
+    }
+    if (c.localCopyPath) {
+        out += button(`${icon.folder('icon')} Show captions in Finder`, { variant: 'outline', size: 'sm', attrs: 'data-detail-action="show-captions"' });
+    }
+    return out;
+}
+
+/** Wires the one-time speech-model prompt's buttons, wherever it shows. */
+export function wireCaptionConsent(container: HTMLElement, ctx: ViewCtx): void {
+    container.querySelectorAll<HTMLButtonElement>('[data-caption-consent]').forEach((el) => {
+        el.addEventListener('click', async () => {
+            const accept = el.dataset.captionConsent === 'yes';
+            try {
+                await live.answerCaptionConsent(accept);
+                ctx.showToast(accept ? 'Downloading the speech model — captions will follow.' : 'Captions are off. You can turn them on in Settings.');
+            } catch (err) {
+                ctx.showToast(toPlainLanguage(err instanceof Error ? err.message : String(err)));
+            }
+            ctx.rerender();
+        });
+    });
 }
