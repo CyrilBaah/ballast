@@ -31,6 +31,7 @@ interface CaptionJobDTO {
   language: "en" | "auto";
   driveFileName?: string;           // e.g. "Sermon (2).srt" (FR-014)
   driveFileLink?: string;           // opened from the transfer's details (FR-016)
+  localCopyPath?: string;           // the caption file saved on this Mac (FR-022)
   note?: string;                    // failure reason, or "No speech found in this video" (FR-007)
 }
 
@@ -78,6 +79,12 @@ The video uploads are never touched (FR-006).
 Current state of one video's captioning, or `null` if it has none. Used
 when the transfer details open, to catch up before events arrive.
 
+### `CaptionsShowLocalCopy(uploadId: number) -> void`
+
+Reveals the job's local caption file in Finder (FR-022). Returns an error
+if the job has no `localCopyPath` or the file has since been moved or
+deleted.
+
 ### Existing methods: behaviour added, signatures unchanged
 
 | Method | Added behaviour |
@@ -117,4 +124,6 @@ states arrive the same way.
   has no audio track". It is always visually separate from the upload's
   status (FR-008).
 - **Transfer details**: when `driveFileLink` is set, an "Open captions in
-  Drive" action (FR-016).
+  Drive" action (FR-016); when `localCopyPath` is set, a "Show in Finder"
+  action (FR-022). The caption line reads "Captions ready on this Mac —
+  waiting for the video to finish" while in `waiting_for_video`.

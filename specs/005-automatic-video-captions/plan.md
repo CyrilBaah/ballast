@@ -15,7 +15,9 @@ itself unchanged:
 2. Transcribes it in about 10-minute pieces with a bundled `whisper-cli`
    (whisper.cpp), using the `large-v3-turbo` model downloaded once on
    first use after a one-time consent prompt.
-3. Merges and cleans the pieces into one SubRip (`.srt`) file.
+3. Merges and cleans the pieces into one SubRip (`.srt`) file, and
+   saves a copy next to the original video on the Mac straight away, so
+   the transcript can be used while the video is still uploading.
 4. Once the video is confirmed in Drive, uploads the `.srt` next to it
    with a non-clashing name, tagged so a crash can never create a
    duplicate.
@@ -97,6 +99,7 @@ internal/
 │   ├── wav.go                   # read WAV header, split at quiet points into ~10-min pieces (§4)
 │   ├── transcribe.go            # run whisper-cli per piece, parse -pp progress (§1)
 │   ├── srt.go                   # parse/shift/merge SRT, drop repeats, empty check (§5)
+│   ├── localcopy.go             # save the .srt next to the original video (fallback: Downloads), free-name choice (FR-022)
 │   ├── formats.go               # captionable vs unsupported video extensions (§10)
 │   ├── worker.go                # one-at-a-time job runner, state machine, restart recovery
 │   └── *_test.go

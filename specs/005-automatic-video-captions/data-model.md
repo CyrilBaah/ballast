@@ -26,6 +26,7 @@ are on and available on this machine.
 | `drive_file_id` | TEXT | Set when `done` with a caption file. |
 | `drive_file_link` | TEXT | Set with `drive_file_id`; opened from the transfer's details (FR-016). |
 | `drive_file_name` | TEXT | The name actually used, e.g. `Sermon (2).srt` (FR-014). |
+| `local_copy_path` | TEXT | Where the local copy of the caption file was saved (FR-022), e.g. `/Users/me/Downloads/Sermon.srt`. Set when the transcript is complete, before `waiting_for_video`. |
 | `note` | TEXT | Plain-language outcome shown to the user: the failure reason when `failed`, or "No speech found in this video" when `done` without a file. |
 | `created_at` | DATETIME NOT NULL | |
 | `updated_at` | DATETIME NOT NULL | |
@@ -67,8 +68,9 @@ created ──► waiting ──► in_progress ──────────�
   `downloading_model` if the model is missing, else `extracting_audio`.
 - **Unsupported format** (research.md §10): created straight into
   `failed` with "Captions aren't supported for .mkv files yet".
-- **transcribing → waiting_for_video**: the transcript is complete but the
-  video upload hasn't succeeded yet. Captions are uploaded only after the
+- **transcribing → waiting_for_video**: the transcript is complete, and
+  its local copy has been saved next to the original video (FR-022), but
+  the video upload hasn't succeeded yet. Captions are uploaded only after the
   video is confirmed in Drive (spec Assumptions, FR-011).
 - **waiting_for_video → uploading_captions**: when the upload reaches
   `succeeded`.
@@ -79,6 +81,9 @@ created ──► waiting ──► in_progress ──────────�
 - **App restart**: a job found in `in_progress` resumes its phase. For
   `transcribing` it continues at `pieces_done`. If `audio.wav` is missing
   it goes back to `extracting_audio` (FR-012).
+- **Upload cancelled after the transcript is complete**: the job becomes
+  `cancelled` and nothing is uploaded to Drive, but the local copy stays
+  on the user's computer and `local_copy_path` is kept (FR-022).
 - **Captions turned off while a job runs**: no transition; the job
   finishes (spec Assumptions).
 

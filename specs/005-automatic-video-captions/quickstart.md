@@ -55,14 +55,18 @@ The Go suite must cover, with fakes and no real model:
    then transcribing with rising %, then uploading. Finally
    `speech-short.srt` appears in the same Drive folder and the row shows
    "Captions ready" with "Open captions in Drive".
-6. **Check**: Drive's copy of the video has the same MD5 as the local file
+6. **Check**: the moment transcription finishes, and before the upload
+   completes on a large file, `speech-short.srt` appears next to the
+   original video on the Mac, and "Show in Finder" opens it (FR-022).
+7. **Check**: Drive's copy of the video has the same MD5 as the local file
    (`md5 speech-short.mp4` against the file's `md5Checksum` in Drive):
    SC-001.
-7. **Check**: in Drive's player, attach `speech-short.srt` (⋮ → Manage
+8. **Check**: in Drive's player, attach `speech-short.srt` (⋮ → Manage
    caption tracks) and spot-check that the timing is within 1 s: SC-002.
-8. Upload `speech-short.mp4` again to the same folder. **Expect**: no
-   prompt this time, and `speech-short (2).srt` is created. The first
-   caption file is untouched (FR-014).
+9. Upload `speech-short.mp4` again to the same folder. **Expect**: no
+   prompt this time, and `speech-short (2).srt` is created both in Drive
+   and next to the local video. The first caption files are untouched
+   (FR-014, FR-022).
 
 ## Scenario 2: Captions never harm the upload (Story 2)
 
@@ -76,8 +80,12 @@ The Go suite must cover, with fakes and no real model:
    captions off, and transcription keeps going (FR-006).
 5. Start a video upload, wait for transcribing, then pause it and Cancel.
    **Expect**: no `whisper-cli` process remains (`pgrep whisper-cli`), the
-   work folder is gone, and no `.srt` appears in Drive (FR-011).
-6. Rename `BALLAST_WHISPER_CLI` to a bad path and relaunch. **Expect**:
+   work folder is gone, and no `.srt` appears in Drive or next to the
+   local video (FR-011).
+6. Start a large video upload and let captions finish while it is still
+   uploading; then Cancel the upload. **Expect**: no `.srt` in Drive, but
+   the local copy next to the video stays (FR-022).
+7. Rename `BALLAST_WHISPER_CLI` to a bad path and relaunch. **Expect**:
    Settings shows captions as unavailable with a reason; video uploads work
    normally.
 
