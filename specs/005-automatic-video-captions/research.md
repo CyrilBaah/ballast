@@ -67,6 +67,19 @@ the GPU. `ggml-large-v3-turbo.bin` fetched from `resolve/main` was
 T019 must still pin a specific repository revision and confirm these
 values against it.
 
+**Measured end to end (2026-10-06, the built pipeline)**: `Aksum.mp4`
+(13 min 23 s, H.264 + 44.1 kHz mono AAC) went through the real worker:
+afconvert, then 2 quiet-point pieces, then whisper-cli with `-mc 0 -sns`, then
+merge and clean, then the local copy. It took about 61 s in total
+(about 13× real time), with a peak of about 1.9 GB of memory. Result:
+125 cues, no repeated lines, no single-word cues, and a seamless
+sentence across the 10-minute cut ("…This is called the first hijra /
+in Islamic memory."). This run also surfaced two fixes:
+- afconvert writes WAVE_FORMAT_EXTENSIBLE for some inputs, so the WAV
+  reader now accepts it;
+- a moved video was being misreported as "no audio track", so it is
+  now reported as missing.
+
 **To confirm during implementation**:
 - The pinned revision, size, and SHA-256. They are recorded when the
   download code is written; none are invented here.
