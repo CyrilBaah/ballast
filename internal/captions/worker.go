@@ -43,6 +43,7 @@ type Deps struct {
 	Availability func() (ok bool, reason, binPath string)
 	Extract      func(ctx context.Context, videoPath, outWAV string) error
 	Uploader     func(ctx context.Context) (Uploader, error) // errors while signed out
+	FreeSpace    func(dir string) (uint64, error)
 
 	Emit              func(events.CaptionJob)
 	EmitConsentNeeded func(modelSizeBytes int64)
@@ -62,7 +63,13 @@ const (
 	NoteTurnedOff      = "Captions were turned off"
 	NoteNoDiskForModel = "Not enough free disk space to download the speech model"
 	NoteUnreadable     = "Couldn't read the audio from this video"
+	NoteNoDiskForAudio = "Not enough free disk space to make captions"
 )
+
+// minFreeForAudio is the free space required before extracting audio. The
+// extracted audio is about 115 MB an hour (16 kHz mono 16-bit), so 1 GiB
+// covers any realistic recording with room to spare (research.md §3).
+const minFreeForAudio = 1 << 30
 
 // Worker turns caption jobs into caption files, one job at a time
 // (spec Assumptions), separately from every upload goroutine.
@@ -92,6 +99,9 @@ func NewWorker(deps Deps) *Worker {
 	}
 	if deps.Extract == nil {
 		deps.Extract = ExtractAudio
+	}
+	if deps.FreeSpace == nil {
+		deps.FreeSpace = modelfetch.AvailableBytes
 	}
 	if deps.RetryDelay == nil {
 		deps.RetryDelay = defaultRetryDelay
@@ -252,22 +262,29 @@ func (w *Worker) AnswerConsent(accept bool) error {
 // failed: any running helper process is killed, nothing is uploaded to
 // Drive, the work folder is deleted, and a local copy already saved next
 // to the video is kept (FR-011, FR-022).
+//
+// The job is marked cancelled first and its running step (if any) killed
+// second; a step re-reads its job right after registering, so a cancel
+// that lands between two steps stops the next one before it starts.
 func (w *Worker) Cancel(uploadID int64) {
+	db := w.deps.DB
+	j, err := db.GetCaptionJobByUpload(uploadID)
+	if err != nil || (j.Status != storage.CaptionWaiting && j.Status != storage.CaptionInProgress) {
+		return
+	}
+	if err := db.SetCaptionCancelled(j.ID, ""); err != nil {
+		return
+	}
 	w.mu.Lock()
 	if cancel := w.running[uploadID]; cancel != nil {
 		cancel()
 	}
 	w.mu.Unlock()
 
+	// Wait for a killed step to unwind before deleting its files.
 	w.step.Lock()
 	defer w.step.Unlock()
-	j, err := w.deps.DB.GetCaptionJobByUpload(uploadID)
-	if err != nil {
-		return
-	}
-	if j.Status == storage.CaptionWaiting || j.Status == storage.CaptionInProgress {
-		w.endJob(j, func() error { return w.deps.DB.SetCaptionCancelled(j.ID, "") }, "The video upload was cancelled")
-	}
+	w.afterEnd(j, "The video upload was cancelled")
 }
 
 // Run processes jobs until ctx ends, sleeping when there's nothing to do.
@@ -361,6 +378,10 @@ func (w *Worker) advance(parent context.Context, j *storage.CaptionJob) bool {
 		delete(w.running, j.UploadID)
 		w.mu.Unlock()
 	}()
+	if cur, err := w.deps.DB.GetCaptionJob(j.ID); err != nil ||
+		(cur.Status != storage.CaptionWaiting && cur.Status != storage.CaptionInProgress) {
+		return false // cancelled since the job list was read
+	}
 
 	switch j.Phase {
 	case storage.PhaseAwaitingConsent:
@@ -426,6 +447,9 @@ func (w *Worker) extract(ctx context.Context, j *storage.CaptionJob) bool {
 	dir := w.workDir(j.ID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return w.fail(j, NoteUnreadable)
+	}
+	if free, err := w.deps.FreeSpace(dir); err == nil && free < minFreeForAudio {
+		return w.fail(j, NoteNoDiskForAudio)
 	}
 	audio := filepath.Join(dir, "audio.wav")
 	if err := w.deps.Extract(ctx, u.LocalPath, audio); err != nil {
@@ -625,6 +649,12 @@ func (w *Worker) endJob(j *storage.CaptionJob, transition func() error, noTransc
 	if err := transition(); err != nil {
 		return false
 	}
+	w.afterEnd(j, noTranscriptReason)
+	return true
+}
+
+// afterEnd is everything that follows a job's final transition.
+func (w *Worker) afterEnd(j *storage.CaptionJob, noTranscriptReason string) {
 	os.RemoveAll(w.workDir(j.ID))
 	w.mu.Lock()
 	delete(w.attempts, j.UploadID)
@@ -640,7 +670,6 @@ func (w *Worker) endJob(j *storage.CaptionJob, transition func() error, noTransc
 		}
 		w.deps.OnNoTranscript(j.UploadID, noTranscriptReason)
 	}
-	return true
 }
 
 func (w *Worker) scheduleRetry(j *storage.CaptionJob) {

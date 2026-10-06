@@ -88,6 +88,15 @@ func (a *App) captionsVideoSucceeded(uploadID int64) {
 	}
 }
 
+// cancelCaptions stops uploadID's captioning because the upload was
+// cancelled, deleted, or failed (FR-011). The upload's own handling is
+// already done by the time this runs.
+func (a *App) cancelCaptions(uploadID int64) {
+	if a.captions != nil {
+		a.captions.Cancel(uploadID)
+	}
+}
+
 // captionJobFor returns uploadID's caption job for the frontend, or nil.
 func (a *App) captionJobFor(uploadID int64) *events.CaptionJob {
 	if a.db == nil {

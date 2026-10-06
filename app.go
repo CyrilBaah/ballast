@@ -766,6 +766,7 @@ func (a *App) runUpload(ctx context.Context, run *uploadRun, id int64, client *h
 					logging.Warn("failed to record upload failure", "uploadId", id, "error", setErr)
 				}
 				events.EmitUploadFailed(a.ctx, id, outcome.Reason)
+				a.cancelCaptions(id)
 			}
 		}
 		// A non-TerminalOutcome error means ctx was cancelled (the app is
@@ -1165,7 +1166,11 @@ func (a *App) UploadCancel(id int64) error {
 			drive.ReleaseSession(a.ctx, client, *u.SessionURI)
 		}
 	}
-	return a.db.SetUploadCancelled(id)
+	if err := a.db.SetUploadCancelled(id); err != nil {
+		return err
+	}
+	a.cancelCaptions(id)
+	return nil
 }
 
 // UploadDelete permanently removes a terminal (succeeded, failed, or
@@ -1175,6 +1180,7 @@ func (a *App) UploadDelete(id int64) error {
 	if a.db == nil {
 		return fmt.Errorf("upload: local database is unavailable")
 	}
+	a.cancelCaptions(id)
 	return a.db.DeleteUpload(id)
 }
 

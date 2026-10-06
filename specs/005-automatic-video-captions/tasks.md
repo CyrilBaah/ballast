@@ -143,7 +143,7 @@ reason shown.
 
 ### Tests for User Story 2 ⚠️ write first, confirm they fail
 
-- [ ] T034 [P] [US2] Extend `internal/captions/worker_test.go` with failure cases:
+- [X] T034 [P] [US2] Extend `internal/captions/worker_test.go` with failure cases:
   - fake-engine `crash`: job `failed` with a note, and the work folder is deleted;
   - extractor "no audio": failed with "This video has no audio track";
   - `empty`: done with the note "No speech found in this video", with no local copy and no Drive upload;
@@ -151,19 +151,19 @@ reason shown.
   - `Cancel` in `waiting_for_video`: `cancelled`, the local copy is kept, and nothing is uploaded;
   - an upload that fails: the job becomes `cancelled`;
   - Drive upload errors (signed out, quota): the job stays `uploading_captions` and retries.
-- [ ] T035 [P] [US2] Write `internal/captions/recovery_test.go`: a job left `in_progress/transcribing` with `pieces_done=2` resumes at piece 3 after a new `Worker` starts. If `audio.wav` is missing, it goes back to `extracting_audio`. Leftover work folders of ended jobs are removed at startup (FR-012, FR-013).
+- [X] T035 [P] [US2] Write `internal/captions/recovery_test.go`: a job left `in_progress/transcribing` with `pieces_done=2` resumes at piece 3 after a new `Worker` starts. If `audio.wav` is missing, it goes back to `extracting_audio`. Leftover work folders of ended jobs are removed at startup (FR-012, FR-013).
 
 ### Implementation for User Story 2
 
-- [ ] T036 [US2] Implement the failure paths, `Cancel`, and Drive-error retry in `internal/captions/worker.go`, making T034 pass. Every `failed` transition carries a plain-language note (FR-007). A cancel kills any running helper process via its context.
-- [ ] T037 [US2] Implement startup recovery and orphan-folder cleanup in `internal/captions/worker.go` (makes T035 pass).
-- [ ] T038 [US2] Wire cancellation into `app.go`:
+- [X] T036 [US2] Implement the failure paths, `Cancel`, and Drive-error retry in `internal/captions/worker.go`, making T034 pass. Every `failed` transition carries a plain-language note (FR-007). A cancel kills any running helper process via its context.
+- [X] T037 [US2] Implement startup recovery and orphan-folder cleanup in `internal/captions/worker.go` (makes T035 pass).
+- [X] T038 [US2] Wire cancellation into `app.go`:
   - `UploadCancel` calls `worker.Cancel(id)` after `stopUpload`;
   - a terminal upload failure in `runUpload` (`SetUploadFailed`) calls `worker.Cancel(id)`;
   - `UploadDelete` relies on the storage cascade (T009) and also calls `worker.Cancel(id)`.
   None of this may change the upload's own status handling.
-- [ ] T039 [P] [US2] Add a free-disk-space check before extraction to `internal/captions/extract.go`. It needs the audio duration × 32,000 bytes/s plus 20%, estimated from the file size before `afconvert` runs. Failing it gives "Not enough free disk space to make captions". Test it in `internal/captions/extract_test.go` with an injectable free-space function.
-- [ ] T040 [US2] Extend `frontend/tests/captions.spec.ts` via `mock_e2e.go` outcomes: a failed caption job shows "Captions couldn't be made — <reason>" while the upload row still shows its own succeeded status, and a non-video upload shows no caption line.
+- [X] T039 [P] [US2] Add a free-disk-space check before extraction to `internal/captions/extract.go`. It needs the audio duration × 32,000 bytes/s plus 20%, estimated from the file size before `afconvert` runs. Failing it gives "Not enough free disk space to make captions". Test it in `internal/captions/extract_test.go` with an injectable free-space function.
+- [X] T040 [US2] Extend `frontend/tests/captions.spec.ts` via `mock_e2e.go` outcomes: a failed caption job shows "Captions couldn't be made — <reason>" while the upload row still shows its own succeeded status, and a non-video upload shows no caption line.
 
 **Checkpoint**: US1 and US2 together are the shippable MVP. Run quickstart Scenarios 2 and 4.
 

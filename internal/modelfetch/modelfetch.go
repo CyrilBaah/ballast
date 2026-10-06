@@ -42,6 +42,9 @@ const spaceMargin = 500 << 20
 // freeSpace reports bytes available to the user at dir; swapped in tests.
 var freeSpace = availableBytes
 
+// AvailableBytes reports the disk space available to the user at dir.
+func AvailableBytes(dir string) (uint64, error) { return availableBytes(dir) }
+
 // Path is where spec's file lives once installed in dir.
 func Path(dir string, spec Spec) string {
 	return filepath.Join(dir, spec.FileName)

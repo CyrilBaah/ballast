@@ -2,6 +2,7 @@ package captions
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -377,5 +378,178 @@ func TestWorkerAdoptsAlreadyUploadedCaption(t *testing.T) {
 	j := h.job(u.ID)
 	if j.Status != storage.CaptionDone || *j.DriveFileLink != "https://drive/earlier" || len(h.up.uploaded) != 0 {
 		t.Fatalf("job = %+v, uploads = %v; want the earlier file adopted, nothing re-uploaded", j, h.up.uploaded)
+	}
+}
+
+// --- User Story 2: captioning never puts the upload at risk ---
+
+func (h *harness) runToWaiting(name string) *storage.Upload {
+	h.t.Helper()
+	h.db.SetCaptionModelConsent(storage.ConsentAccepted)
+	u := h.newUpload(name)
+	if _, err := h.w.Enqueue(u.ID); err != nil {
+		h.t.Fatal(err)
+	}
+	h.w.RunUntilIdle(context.Background())
+	return u
+}
+
+func TestWorkerEngineCrashFailsWithReason(t *testing.T) {
+	t.Setenv("FAKEWHISPER_MODE", "crash")
+	h := newHarness(t)
+	u := h.runToWaiting("a.mp4")
+	j := h.job(u.ID)
+	if j.Status != storage.CaptionFailed || j.Note == nil || *j.Note != "The speech engine couldn't caption this video" {
+		t.Fatalf("job = %+v", j)
+	}
+	if _, err := os.Stat(h.w.workDir(j.ID)); !os.IsNotExist(err) {
+		t.Fatal("work folder left behind after a failure")
+	}
+	if len(h.noScript) != 1 {
+		t.Fatalf("OnNoTranscript calls = %v, want 1", h.noScript)
+	}
+}
+
+func TestWorkerNoAudioTrack(t *testing.T) {
+	h := newHarness(t)
+	h.extractFn = func(context.Context, string, string) error { return ErrNoAudio }
+	u := h.runToWaiting("silent.mp4")
+	if j := h.job(u.ID); j.Status != storage.CaptionFailed || *j.Note != "This video has no audio track" {
+		t.Fatalf("job = %+v", j)
+	}
+}
+
+func TestWorkerNoSpeech(t *testing.T) {
+	t.Setenv("FAKEWHISPER_MODE", "empty")
+	h := newHarness(t)
+	u := h.runToWaiting("music.mp4")
+	j := h.job(u.ID)
+	if j.Status != storage.CaptionDone || j.Note == nil || *j.Note != NoteNoSpeech || j.LocalCopyPath != nil {
+		t.Fatalf("job = %+v; want done with the no-speech note and no local copy", j)
+	}
+	h.succeedUpload(u.ID)
+	h.w.RunUntilIdle(context.Background())
+	if len(h.up.uploaded) != 0 {
+		t.Fatal("an empty caption file was uploaded")
+	}
+	if len(h.noScript) != 1 || h.noScript[0] != NoteNoSpeech {
+		t.Fatalf("OnNoTranscript = %v", h.noScript)
+	}
+}
+
+func TestWorkerRepeatLoopIsCollapsed(t *testing.T) {
+	t.Setenv("FAKEWHISPER_MODE", "repeat")
+	h := newHarness(t)
+	h.extractOf = time.Minute // six 10-second cues, the first five identical
+	u := h.runToWaiting("loop.mp4")
+	h.succeedUpload(u.ID)
+	h.w.RunUntilIdle(context.Background())
+	if n := strings.Count(h.up.content[0], "I wonder what will happen to you?"); n != 1 {
+		t.Fatalf("looped line appears %d times in the uploaded captions, want 1:\n%s", n, h.up.content[0])
+	}
+}
+
+func TestCancelDuringTranscriptionKillsEngine(t *testing.T) {
+	t.Setenv("FAKEWHISPER_MODE", "hang")
+	h := newHarness(t)
+	h.db.SetCaptionModelConsent(storage.ConsentAccepted)
+	u := h.newUpload("long.mp4")
+	h.w.Enqueue(u.ID)
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	go h.w.Run(ctx)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for h.job(u.ID).Phase != storage.PhaseTranscribing {
+		if time.Now().After(deadline) {
+			t.Fatal("never reached transcribing")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond) // let the engine start
+	start := time.Now()
+	h.w.Cancel(u.ID)
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("Cancel took %v; the engine should be killed within 2 s", d)
+	}
+	j := h.job(u.ID)
+	if j.Status != storage.CaptionCancelled {
+		t.Fatalf("job = %s, want cancelled", j.Status)
+	}
+	if _, err := os.Stat(h.w.workDir(j.ID)); !os.IsNotExist(err) {
+		t.Fatal("work folder left behind after cancel")
+	}
+	if len(h.up.uploaded) != 0 {
+		t.Fatal("something was uploaded for a cancelled job")
+	}
+}
+
+func TestCancelAfterTranscriptKeepsLocalCopy(t *testing.T) {
+	t.Setenv("FAKEWHISPER_MODE", "ok")
+	h := newHarness(t)
+	u := h.runToWaiting("talk.mp4")
+	local := *h.job(u.ID).LocalCopyPath
+	h.w.Cancel(u.ID)
+	h.w.RunUntilIdle(context.Background())
+	if j := h.job(u.ID); j.Status != storage.CaptionCancelled || j.LocalCopyPath == nil {
+		t.Fatalf("job = %+v", j)
+	}
+	if _, err := os.Stat(local); err != nil {
+		t.Fatalf("local copy was removed on cancel: %v", err)
+	}
+	if len(h.up.uploaded) != 0 {
+		t.Fatal("caption file uploaded for a cancelled video")
+	}
+}
+
+func TestFailedUploadCancelsWaitingJob(t *testing.T) {
+	t.Setenv("FAKEWHISPER_MODE", "ok")
+	h := newHarness(t)
+	u := h.runToWaiting("talk.mp4")
+	h.db.SetUploadInProgress(u.ID)
+	h.db.SetUploadFailed(u.ID, "Google Drive storage is full")
+	h.w.RunUntilIdle(context.Background())
+	if j := h.job(u.ID); j.Status != storage.CaptionCancelled {
+		t.Fatalf("job = %s, want cancelled once its upload failed", j.Status)
+	}
+}
+
+func TestDriveErrorsRetryWithoutFailing(t *testing.T) {
+	t.Setenv("FAKEWHISPER_MODE", "ok")
+	h := newHarness(t)
+	u := h.runToWaiting("talk.mp4")
+	h.up.err = errors.New("drive: 403 storageQuotaExceeded")
+	h.succeedUpload(u.ID)
+	h.w.RunUntilIdle(context.Background())
+	if j := h.job(u.ID); j.Status != storage.CaptionInProgress || j.Phase != storage.PhaseUploadingCaptions {
+		t.Fatalf("job after a Drive error = %s/%s, want still uploading_captions", j.Status, j.Phase)
+	}
+	h.up.err = nil
+	h.w.RunUntilIdle(context.Background())
+	if j := h.job(u.ID); j.Status != storage.CaptionDone {
+		t.Fatalf("job after Drive recovered = %s, want done", j.Status)
+	}
+}
+
+func TestSignedOutRetriesLater(t *testing.T) {
+	t.Setenv("FAKEWHISPER_MODE", "ok")
+	h := newHarness(t)
+	u := h.runToWaiting("talk.mp4")
+	signedIn := false
+	h.w.deps.Uploader = func(context.Context) (Uploader, error) {
+		if !signedIn {
+			return nil, errors.New("not signed in")
+		}
+		return h.up, nil
+	}
+	h.succeedUpload(u.ID)
+	h.w.RunUntilIdle(context.Background())
+	if j := h.job(u.ID); j.Phase != storage.PhaseUploadingCaptions {
+		t.Fatalf("job while signed out = %s/%s", j.Status, j.Phase)
+	}
+	signedIn = true
+	h.w.RunUntilIdle(context.Background())
+	if j := h.job(u.ID); j.Status != storage.CaptionDone {
+		t.Fatalf("job after signing in = %s", j.Status)
 	}
 }
