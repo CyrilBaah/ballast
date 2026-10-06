@@ -126,14 +126,14 @@ description: "Task list for Automatic Video Summaries"
   - call `VideoSucceeded` where captions do;
   - add the bound methods `SummariesGetSettings`, `SummariesAnswerModelDownload`, `SummariesGetJob`, `SummariesShowLocalCopy`;
   - add `summary` to `UploadListItemDTO`.
-- [ ] T029 [US1] Regenerate the Wails bindings (`wails generate module`; revert mode-only runtime changes).
-- [ ] T030 [P] [US1] `frontend/src/api/summaries.ts` (plain-data types, like `captions.ts`).
-- [ ] T031 [US1] `frontend/src/ui/live.ts`: summary state per upload, the `summaries:*` events, and the consent prompt (also derived from saved state on load, as captions does).
-- [ ] T032 [US1] `frontend/src/ui/summaries.ts`, plus `transfers.ts` and `home.ts`:
+- [X] T029 [US1] Regenerate the Wails bindings (`wails generate module`; revert mode-only runtime changes).
+- [X] T030 [P] [US1] `frontend/src/api/summaries.ts` (plain-data types, like `captions.ts`).
+- [X] T031 [US1] `frontend/src/ui/live.ts`: summary state per upload, the `summaries:*` events, and the consent prompt (also derived from saved state on load, as captions does).
+- [X] T032 [US1] `frontend/src/ui/summaries.ts`, plus `transfers.ts` and `home.ts`:
   - a summary line under the caption line, using the contract's wording;
   - the download prompt;
   - "Open summary in Drive" and "Show summary in Finder" detail actions.
-- [ ] T033 [US1] `frontend/tests/summaries.spec.ts`: event-driven checks of the prompt, the line per phase, and the detail actions, in the same style as `captions.spec.ts`.
+- [X] T033 [US1] `frontend/tests/summaries.spec.ts`: event-driven checks of the prompt, the line per phase, and the detail actions, in the same style as `captions.spec.ts`.
 
 **Checkpoint**: US1 works end to end with the pinned model. Run quickstart Scenario 1.
 
@@ -160,8 +160,8 @@ description: "Task list for Automatic Video Summaries"
 
 - [X] T036 [US2] Failure paths, retry caps, and `Cancel` in `worker.go` (makes T034 pass).
 - [X] T037 [US2] Restart recovery and orphan cleanup in `worker.go` (makes T035 pass).
-- [ ] T038 [US2] `app_summaries.go`: cancel summaries wherever `cancelCaptions` runs; add the `SummariesRetry` bound method; add a "Try again" action on failed summary lines in `transfers.ts`.
-- [ ] T039 [US2] Extend `summaries.spec.ts`: a failed summary shows its reason and Try again, and the upload and caption lines are unchanged.
+- [X] T038 [US2] `app_summaries.go`: cancel summaries wherever `cancelCaptions` runs; add the `SummariesRetry` bound method; add a "Try again" action on failed summary lines in `transfers.ts`.
+- [X] T039 [US2] Extend `summaries.spec.ts`: a failed summary shows its reason and Try again, and the upload and caption lines are unchanged.
 
 ---
 
@@ -174,8 +174,8 @@ description: "Task list for Automatic Video Summaries"
   - turning back on accepts consent and starts a background download (stubbed);
   - turning on is rejected when unavailable.
 - [X] T041 [US3] Add `SummariesSetEnabled` to `app_summaries.go` (makes T040 pass); regenerate bindings.
-- [ ] T042 [US3] Add a "Video summaries" section to `frontend/src/ui/views/settings.ts`, with the switch and the FR-014 notice, and the unavailable reason when it applies.
-- [ ] T043 [US3] Extend `summaries.spec.ts` for the Settings section, including the unavailable state.
+- [X] T042 [US3] Add a "Video summaries" section to `frontend/src/ui/views/settings.ts`, with the switch and the FR-014 notice, and the unavailable reason when it applies.
+- [X] T043 [US3] Extend `summaries.spec.ts` for the Settings section, including the unavailable state.
 
 ---
 

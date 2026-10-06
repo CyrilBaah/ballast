@@ -12,6 +12,7 @@ import * as live from '../live';
 import type { LiveUpload } from '../live';
 import { toPlainLanguage } from '../../errors';
 import { captionConsentBanner, captionLine } from '../captions';
+import { summaryConsentBanner, summaryLine } from '../summaries';
 import type { ViewCtx } from '../shell';
 
 const FILTERS: { id: 'active' | 'all' | 'secured'; label: string }[] = [
@@ -81,6 +82,7 @@ export function renderTransfers(container: HTMLElement, ctx: ViewCtx): void {
                 </div>
 
                 ${live.captionConsent ? captionConsentBanner(live.captionConsent.sizeBytes) : ''}
+                ${live.summaryConsent ? summaryConsentBanner(live.summaryConsent.sizeBytes) : ''}
                 <div class="transfers-list">
                     ${
                         visible.length
@@ -152,6 +154,15 @@ async function applyAction(action: string, id: string, ctx: ViewCtx) {
             if (u?.caption?.driveFileLink) window.open(u.caption.driveFileLink, '_blank', 'noopener,noreferrer');
         } else if (action === 'show-captions') {
             await live.showCaptionLocalCopy(id);
+        } else if (action === 'open-summary') {
+            const u = live.orderedUploads().find((x) => x.id === id);
+            if (u?.summary?.driveFileLink) window.open(u.summary.driveFileLink, '_blank', 'noopener,noreferrer');
+        } else if (action === 'show-summary') {
+            await live.showSummaryLocalCopy(id);
+        } else if (action === 'retry-summary') {
+            await live.retrySummary(id);
+            ctx.showToast('Trying the summary again.');
+            ctx.rerender();
         }
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -232,6 +243,7 @@ function transferCard(u: LiveUpload, selected: boolean): string {
                     <div class="transfer-card-actions">${cardActions(u, 'icon')}</div>
                 </div>
                 ${captionLine(u.caption)}
+                ${summaryLine(u.summary)}
             </div>
         </div>
     </div>`;
@@ -276,8 +288,9 @@ function detailPanel(u: LiveUpload): string {
                       : `<p style="margin-top:12px;font-size:12px;font-style:italic;color:var(--color-mute)">"${STATUS_WARM[u.status]}"</p>`
             }
 
-            <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:8px">${cardActions(u, 'sm')}${captionActions(u)}</div>
+            <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:8px">${cardActions(u, 'sm')}${captionActions(u)}${summaryActions(u)}</div>
             ${captionLine(u.caption)}
+            ${summaryLine(u.summary)}
         </div>
 
         <div class="scroll detail-panel-body">
@@ -324,8 +337,37 @@ function captionActions(u: LiveUpload): string {
     return out;
 }
 
+// The summary's own actions (FR-009, FR-018).
+function summaryActions(u: LiveUpload): string {
+    const s = u.summary;
+    if (!s) return '';
+    let out = '';
+    if (s.driveFileLink) {
+        out += button(`${icon.drive('icon')} Open summary in Drive`, { variant: 'soft', size: 'sm', attrs: 'data-detail-action="open-summary"' });
+    }
+    if (s.localCopyPath) {
+        out += button(`${icon.folder('icon')} Show summary in Finder`, { variant: 'outline', size: 'sm', attrs: 'data-detail-action="show-summary"' });
+    }
+    if (s.canRetry) {
+        out += button(`${icon.refresh('icon')} Try the summary again`, { variant: 'outline', size: 'sm', attrs: 'data-detail-action="retry-summary"' });
+    }
+    return out;
+}
+
 /** Wires the one-time speech-model prompt's buttons, wherever it shows. */
 export function wireCaptionConsent(container: HTMLElement, ctx: ViewCtx): void {
+    container.querySelectorAll<HTMLButtonElement>('[data-summary-consent]').forEach((el) => {
+        el.addEventListener('click', async () => {
+            const accept = el.dataset.summaryConsent === 'yes';
+            try {
+                await live.answerSummaryConsent(accept);
+                ctx.showToast(accept ? 'Downloading the summary model — summaries will follow.' : 'Summaries are off. You can turn them on in Settings.');
+            } catch (err) {
+                ctx.showToast(toPlainLanguage(err instanceof Error ? err.message : String(err)));
+            }
+            ctx.rerender();
+        });
+    });
     container.querySelectorAll<HTMLButtonElement>('[data-caption-consent]').forEach((el) => {
         el.addEventListener('click', async () => {
             const accept = el.dataset.captionConsent === 'yes';

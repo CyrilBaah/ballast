@@ -34,6 +34,18 @@ export function FilesPickLocal():Promise<main.LocalFileRef>;
 
 export function FilesPickLocalMultiple():Promise<Array<main.LocalFileRef>>;
 
+export function SummariesAnswerModelDownload(arg1:boolean):Promise<main.SummarySettingsDTO>;
+
+export function SummariesGetJob(arg1:number):Promise<events.SummaryJob>;
+
+export function SummariesGetSettings():Promise<main.SummarySettingsDTO>;
+
+export function SummariesRetry(arg1:number):Promise<events.SummaryJob>;
+
+export function SummariesSetEnabled(arg1:boolean):Promise<main.SummarySettingsDTO>;
+
+export function SummariesShowLocalCopy(arg1:number):Promise<void>;
+
 export function UploadCancel(arg1:number):Promise<void>;
 
 export function UploadConfirmRestart(arg1:number):Promise<void>;

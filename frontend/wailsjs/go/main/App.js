@@ -62,6 +62,30 @@ export function FilesPickLocalMultiple() {
   return window['go']['main']['App']['FilesPickLocalMultiple']();
 }
 
+export function SummariesAnswerModelDownload(arg1) {
+  return window['go']['main']['App']['SummariesAnswerModelDownload'](arg1);
+}
+
+export function SummariesGetJob(arg1) {
+  return window['go']['main']['App']['SummariesGetJob'](arg1);
+}
+
+export function SummariesGetSettings() {
+  return window['go']['main']['App']['SummariesGetSettings']();
+}
+
+export function SummariesRetry(arg1) {
+  return window['go']['main']['App']['SummariesRetry'](arg1);
+}
+
+export function SummariesSetEnabled(arg1) {
+  return window['go']['main']['App']['SummariesSetEnabled'](arg1);
+}
+
+export function SummariesShowLocalCopy(arg1) {
+  return window['go']['main']['App']['SummariesShowLocalCopy'](arg1);
+}
+
 export function UploadCancel(arg1) {
   return window['go']['main']['App']['UploadCancel'](arg1);
 }

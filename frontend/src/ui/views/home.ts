@@ -8,6 +8,7 @@ import { formatBytes, formatDuration, formatSpeed, relativeTime } from '../forma
 import * as live from '../live';
 import type { ViewCtx } from '../shell';
 import { captionConsentBanner, captionLine } from '../captions';
+import { summaryConsentBanner, summaryLine } from '../summaries';
 import { wireCaptionConsent } from './transfers';
 
 function greeting(): string {
@@ -88,6 +89,7 @@ export function renderHome(container: HTMLElement, ctx: ViewCtx): void {
             <div class="home-body">
                 <div class="home-main-col">
                     ${live.captionConsent ? captionConsentBanner(live.captionConsent.sizeBytes) : ''}
+                    ${live.summaryConsent ? summaryConsentBanner(live.summaryConsent.sizeBytes) : ''}
                     <div class="home-actions">
                         ${actionCard('choose', icon.folder('icon' + ' icon-lg'), 'Choose files', 'Pick a file to send', true)}
                         ${actionCard('lab', icon.flask('icon icon-lg'), 'Test my setup', 'Break it on purpose', false)}
@@ -124,6 +126,7 @@ export function renderHome(container: HTMLElement, ctx: ViewCtx): void {
                                             ${u.status === 'awaiting_confirmation' ? `<span class="fg-tangerine">needs your decision</span>` : ''}
                                         </span>
                                         ${captionLine(u.caption, true)}
+                                        ${summaryLine(u.summary, true)}
                                     </span>
                                 </button>`;
                                       })

@@ -81,6 +81,34 @@ export namespace events {
 	        this.note = source["note"];
 	    }
 	}
+	export class SummaryJob {
+	    uploadId: number;
+	    status: string;
+	    phase?: string;
+	    progressPercent: number;
+	    driveFileName?: string;
+	    driveFileLink?: string;
+	    localCopyPath?: string;
+	    note?: string;
+	    canRetry: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new SummaryJob(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.uploadId = source["uploadId"];
+	        this.status = source["status"];
+	        this.phase = source["phase"];
+	        this.progressPercent = source["progressPercent"];
+	        this.driveFileName = source["driveFileName"];
+	        this.driveFileLink = source["driveFileLink"];
+	        this.localCopyPath = source["localCopyPath"];
+	        this.note = source["note"];
+	        this.canRetry = source["canRetry"];
+	    }
+	}
 
 }
 
@@ -150,6 +178,28 @@ export namespace main {
 	        this.awaitingConfirmationReason = source["awaitingConfirmationReason"];
 	    }
 	}
+	export class SummarySettingsDTO {
+	    enabled: boolean;
+	    available: boolean;
+	    unavailableReason?: string;
+	    modelConsent: string;
+	    modelDownloaded: boolean;
+	    modelSizeBytes: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new SummarySettingsDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.available = source["available"];
+	        this.unavailableReason = source["unavailableReason"];
+	        this.modelConsent = source["modelConsent"];
+	        this.modelDownloaded = source["modelDownloaded"];
+	        this.modelSizeBytes = source["modelSizeBytes"];
+	    }
+	}
 	export class UploadListItemDTO {
 	    id: number;
 	    fileName: string;
@@ -161,6 +211,7 @@ export namespace main {
 	    failureReason?: string;
 	    startedAt: string;
 	    caption?: events.CaptionJob;
+	    summary?: events.SummaryJob;
 	
 	    static createFrom(source: any = {}) {
 	        return new UploadListItemDTO(source);
@@ -178,6 +229,7 @@ export namespace main {
 	        this.failureReason = source["failureReason"];
 	        this.startedAt = source["startedAt"];
 	        this.caption = this.convertValues(source["caption"], events.CaptionJob);
+	        this.summary = this.convertValues(source["summary"], events.SummaryJob);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

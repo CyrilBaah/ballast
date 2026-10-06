@@ -37,6 +37,7 @@ export function renderSettings(container: HTMLElement, ctx: ViewCtx): void {
                 </div>
 
                 ${captionsSection()}
+                ${summariesSection()}
 
                 <div class="card" style="margin-top:16px;padding:20px">
                     <h2 class="eyebrow">Lifetime record</h2>
@@ -57,6 +58,14 @@ export function renderSettings(container: HTMLElement, ctx: ViewCtx): void {
 
     container.querySelector('#sign-out-btn')?.addEventListener('click', () => ctx.signOut());
     wireCaptionSettings(container, ctx);
+    container.querySelector('[data-summaries-toggle]')?.addEventListener('click', async () => {
+        try {
+            await live.setSummariesEnabled(!(live.summarySettings?.enabled ?? false));
+        } catch (err) {
+            ctx.showToast(toPlainLanguage(err instanceof Error ? err.message : String(err)));
+        }
+        ctx.rerender();
+    });
     container.querySelectorAll<HTMLElement>('[data-toggle]').forEach((el) => {
         el.addEventListener('click', () => {
             const key = el.dataset.toggle as 'autoResume' | 'verifyChecksums';
@@ -124,4 +133,26 @@ function wireCaptionSettings(container: HTMLElement, ctx: ViewCtx): void {
     container.querySelectorAll<HTMLButtonElement>('[data-caption-lang]').forEach((el) => {
         el.addEventListener('click', () => void run(() => live.setCaptionLanguage(el.dataset.captionLang as 'en' | 'auto')));
     });
+}
+
+// Video summaries (Feature 006, FR-012/FR-014).
+function summariesSection(): string {
+    const c = live.summarySettings;
+    if (!c) {
+        void live.refreshSummarySettings();
+        return `<div class="card settings-rows" data-summaries-settings style="margin-top:16px"><p style="margin:0;padding:16px;font-size:12px;color:var(--color-mute)">Loading summary settings…</p></div>`;
+    }
+    const disabled = !c.available;
+    return `<div class="card settings-rows" data-summaries-settings style="margin-top:16px">
+        ${settingRow(
+            'Video summaries',
+            'Write a summary of every captioned video — overview, main points, quotes, a title and a message ready to share — on this Mac.',
+            `<span ${disabled ? 'style="opacity:0.45;pointer-events:none"' : ''}>${toggleHtml(c.enabled && !disabled, 'data-summaries-toggle')}</span>`,
+        )}
+        <p data-summaries-notice style="margin:0;padding:12px 20px 16px;font-size:11.5px;line-height:1.6;color:var(--color-mute)">${
+            disabled
+                ? `<span class="fg-coral">${c.unavailableReason ?? "Summaries aren't available on this system yet"}</span>`
+                : `Summaries are written on this Mac for free. Nothing but the finished summary leaves your computer. Summaries of long or unclear recordings may be less detailed.${c.modelDownloaded ? '' : ` The first summary needs a one-time ${formatBytes(c.modelSizeBytes)} download.`}`
+        }</p>
+    </div>`;
 }

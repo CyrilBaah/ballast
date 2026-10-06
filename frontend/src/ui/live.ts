@@ -31,6 +31,14 @@ import {
     ShowLocalCopy,
 } from '../api/captions';
 import type { CaptionJob, CaptionSettings } from '../api/captions';
+import {
+    AnswerModelDownload as answerSummaryDownloadApi,
+    GetSettings as getSummarySettings,
+    Retry as retrySummaryApi,
+    SetEnabled as setSummariesEnabledApi,
+    ShowLocalCopy as showSummaryLocalCopyApi,
+} from '../api/summaries';
+import type { SummaryJob, SummarySettings } from '../api/summaries';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 import { toPlainLanguage } from '../errors';
 import type { UploadStatus } from './components';
@@ -52,6 +60,8 @@ export interface LiveUpload {
     startedAt: string;
     /** The video's captioning state (Feature 005), or null if it has none. */
     caption: CaptionJob | null;
+    /** The video's summary state (Feature 006), or null if it has none. */
+    summary: SummaryJob | null;
 }
 
 export interface ActivityEntry {
@@ -144,6 +154,7 @@ function upsert(id: string, patch: Partial<LiveUpload>, seedName?: string): Live
             throughputBps: 0,
             startedAt: new Date().toISOString(),
             caption: null,
+            summary: null,
         };
         uploadsById.set(id, u);
         uploadsOrder = [id, ...uploadsOrder];
@@ -206,6 +217,18 @@ function wireUploadEvents(): void {
         if (before !== 'done' && c.status === 'done' && c.driveFileLink) {
             pushActivity('success', `Captions for ${u.name} are in Drive`);
         }
+        notify();
+    });
+    EventsOn('summaries:updated', (s: SummaryJob) => {
+        const u = uploadsById.get(String(s.uploadId));
+        if (!u) return;
+        const before = u.summary?.status;
+        u.summary = s;
+        if (before !== 'done' && s.status === 'done') pushActivity('success', `Summary of ${u.name} is in Drive`);
+        notify();
+    });
+    EventsOn('summaries:consent-needed', (p: { modelSizeBytes: number }) => {
+        summaryConsent = { sizeBytes: p.modelSizeBytes };
         notify();
     });
     EventsOn('captions:consent-needed', (p: { modelSizeBytes: number }) => {
@@ -286,6 +309,7 @@ async function hydrateAfterSignIn(): Promise<void> {
                 throughputBps: 0,
                 startedAt: item.startedAt,
                 caption: item.caption ?? null,
+                summary: item.summary ?? null,
             });
         }
         uploadsOrder = list.map((item) => String(item.id));
@@ -296,11 +320,16 @@ async function hydrateAfterSignIn(): Promise<void> {
             const settings = await getCaptionSettings();
             if (settings.modelConsent === 'unasked') captionConsent = { sizeBytes: settings.modelSizeBytes };
         }
+        if (list.some((item) => item.summary?.phase === 'awaiting_consent')) {
+            const settings = await getSummarySettings();
+            if (settings.modelConsent === 'unasked') summaryConsent = { sizeBytes: settings.modelSizeBytes };
+        }
     } catch {
         /* non-fatal -- live events still drive updates from here */
     }
     void refreshStorageQuota();
     void refreshCaptionSettings();
+    void refreshSummarySettings();
     notify();
 }
 
@@ -620,4 +649,40 @@ export async function setCaptionLanguage(language: 'en' | 'auto'): Promise<void>
 
 export async function showCaptionLocalCopy(id: string): Promise<void> {
     await ShowLocalCopy(Number(id));
+}
+
+/** Set while the one-time summary-model download prompt should show (FR-013). */
+export let summaryConsent: { sizeBytes: number } | null = null;
+export let summarySettings: SummarySettings | null = null;
+
+export async function answerSummaryConsent(accept: boolean): Promise<void> {
+    summaryConsent = null;
+    notify();
+    summarySettings = await answerSummaryDownloadApi(accept);
+    notify();
+}
+
+export async function refreshSummarySettings(): Promise<void> {
+    try {
+        summarySettings = await getSummarySettings();
+        notify();
+    } catch {
+        /* the Settings view shows a loading line */
+    }
+}
+
+export async function setSummariesEnabled(enabled: boolean): Promise<void> {
+    summarySettings = await setSummariesEnabledApi(enabled);
+    notify();
+}
+
+export async function retrySummary(id: string): Promise<void> {
+    const s = await retrySummaryApi(Number(id));
+    const u = uploadsById.get(id);
+    if (u && s) u.summary = s;
+    notify();
+}
+
+export async function showSummaryLocalCopy(id: string): Promise<void> {
+    await showSummaryLocalCopyApi(Number(id));
 }
