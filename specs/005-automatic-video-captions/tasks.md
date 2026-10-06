@@ -201,7 +201,7 @@ Windows, and Linux.
 
 **Independent Test**: The findings file exists and answers the question with evidence.
 
-- [ ] T046 [US4] Carry out research.md §13 on one short and one multi-hour video (copy streams without re-encoding with `-c:s mov_text`, compare per-stream MD5s, upload, and check Drive's player), then write `specs/005-automatic-video-captions/findings-embedded-captions.md` with the result, screenshots, the remux time and extra disk needed for the long file, and a recommendation.
+- [ ] T046 [US4] Carry out research.md §13 on one short and one multi-hour video (copy streams without re-encoding with `-c:s mov_text`, compare per-stream MD5s, upload, and check Drive's player), then write `specs/005-automatic-video-captions/findings-embedded-captions.md` with the result, screenshots, the remux time and extra disk needed for the long file, and a recommendation. *(Partly done: lossless embedding measured — identical picture/sound checksums, 0.26 s, +14 KB. Still needs the Drive-player check by the maintainer; see findings-embedded-captions.md §2.)*
 
 ---
 
@@ -210,8 +210,8 @@ Windows, and Linux.
 - [X] T047 [P] Update `README.md`: what captions do, Apple-silicon-only availability, `scripts/build-engines.sh`, `BALLAST_WHISPER_CLI` for `wails dev`, and where the model and work folders live.
 - [X] T048 [P] Add the captions feature to the `[Unreleased]` section of `CHANGELOG.md`.
 - [X] T049 [P] Logging audit: make sure no transcript text, SRT content, or model URL query string is logged anywhere in `internal/captions` or `app.go` (grep `logging.` calls). Logs carry only IDs, phases, counts, durations, and reasons (Constitution IV).
-- [ ] T050 Run quickstart.md Scenarios 1–6 on the maintainer's Apple-silicon Mac with a real 3-hour sermon. Record transcription time against SC-003, peak memory at 10 minutes vs 2 hours (SC-006), upload time with captions off vs on (SC-004), and observations on music sections and Twi/Ga passages. If SC-003 fails on 8 GB, report it and propose the `large-v3-turbo-q8_0` fallback for the maintainer's decision (research.md §2) instead of switching silently.
-- [ ] T051 Final checks: `gofmt -l .`, `go vet ./...`, `go test ./...`, `cd frontend && npx tsc --noEmit`, and the Playwright suite against `wails dev` with `BALLAST_E2E_MOCK=1`, using a separate test account and data folder.
+- [ ] T050 Run quickstart.md Scenarios 1–6 on the maintainer's Apple-silicon Mac with a real 3-hour sermon. Record transcription time against SC-003, peak memory at 10 minutes vs 2 hours (SC-006), upload time with captions off vs on (SC-004), and observations on music sections and Twi/Ga passages. If SC-003 fails on 8 GB, report it and propose the `large-v3-turbo-q8_0` fallback for the maintainer's decision (research.md §2) instead of switching silently. *(Partly done 2026-10-06: real pipeline on `Aksum.mp4` — 13 min captioned in ~61 s, ~1.9 GB peak, 125 clean cues. Still to do: a 3-hour sermon (the 43-minute one has since been removed from Downloads), the full in-app run, and SC-004 upload timing.)*
+- [X] T051 Final checks: `gofmt -l .`, `go vet ./...`, `go test ./...`, `cd frontend && npx tsc --noEmit`, and the Playwright suite against `wails dev` with `BALLAST_E2E_MOCK=1`, using a separate test account and data folder. *(Go, race detector, tsc, Windows/Linux builds all pass. Playwright not run: `wails dev` mock mode uses the real keychain, and a hidden keychain entry would make the app create and save a new encryption key over the real one.)*
 
 ---
 
