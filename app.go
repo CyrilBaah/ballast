@@ -51,6 +51,9 @@ type App struct {
 	// captionsStop stops its worker loop.
 	captions     *captions.Worker
 	captionsStop context.CancelFunc
+	// captionsAvailability reports whether captions can run on this
+	// machine; swapped in tests.
+	captionsAvailability func() (ok bool, reason, binPath string)
 	// encKey encrypts token columns at rest and is loaded from the OS
 	// keychain at startup. It stays in memory only, never on disk.
 	encKey []byte
@@ -97,7 +100,11 @@ func (a *App) resetAutoRestarts() {
 
 // NewApp creates a new App application struct.
 func NewApp() *App {
-	return &App{autoRestarted: make(map[int64]bool), running: make(map[int64]*uploadRun)}
+	return &App{
+		autoRestarted:        make(map[int64]bool),
+		running:              make(map[int64]*uploadRun),
+		captionsAvailability: captions.Availability,
+	}
 }
 
 // startup wires up runtime dependencies once Wails hands us a context. If

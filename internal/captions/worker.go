@@ -75,9 +75,10 @@ const minFreeForAudio = 1 << 30
 // Worker turns caption jobs into caption files, one job at a time
 // (spec Assumptions), separately from every upload goroutine.
 type Worker struct {
-	deps Deps
-	step sync.Mutex // held while one job advances one phase
-	wake chan struct{}
+	deps    Deps
+	step    sync.Mutex // held while one job advances one phase
+	fetchMu sync.Mutex // one model download at a time (jobs and Prefetch)
+	wake    chan struct{}
 
 	mu           sync.Mutex
 	running      map[int64]context.CancelFunc // upload id → the step in progress
@@ -209,6 +210,23 @@ func (w *Worker) firstWorkPhase() storage.CaptionPhase {
 		return storage.PhaseExtractingAudio
 	}
 	return storage.PhaseDownloadingModel
+}
+
+// Prefetch downloads the speech model in the background if it isn't
+// already here -- used when the user turns captions back on in Settings,
+// which counts as agreeing to the download (FR-019).
+func (w *Worker) Prefetch(ctx context.Context) {
+	go func() {
+		w.fetchMu.Lock()
+		defer w.fetchMu.Unlock()
+		if modelfetch.Present(w.modelDir(), w.deps.Model) {
+			return
+		}
+		if err := w.deps.FetchModel(ctx, w.deps.HTTPClient, w.modelDir(), w.deps.Model, nil); err != nil {
+			logging.Warn("background speech model download failed; the first video will retry it", "error", err)
+		}
+		w.Wake()
+	}()
 }
 
 // VideoSucceeded tells the worker an upload has landed in Drive, so its
@@ -421,11 +439,13 @@ func (w *Worker) downloadModel(ctx context.Context, j *storage.CaptionJob) bool 
 	if modelfetch.Present(w.modelDir(), w.deps.Model) {
 		return w.setPhase(j, storage.PhaseExtractingAudio)
 	}
+	w.fetchMu.Lock()
 	err := w.deps.FetchModel(ctx, w.deps.HTTPClient, w.modelDir(), w.deps.Model, func(done, total int64) {
 		if total > 0 {
 			w.setProgress(j, int(done*100/total))
 		}
 	})
+	w.fetchMu.Unlock()
 	switch {
 	case err == nil:
 		return w.setPhase(j, storage.PhaseExtractingAudio)

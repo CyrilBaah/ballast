@@ -54,6 +54,7 @@ func (a *App) startCaptions() {
 		DataDir:      dataDir,
 		DownloadsDir: downloads,
 		Model:        captions.SpeechModel,
+		Availability: a.captionsAvailability,
 		Uploader: func(ctx context.Context) (captions.Uploader, error) {
 			svc, err := a.driveService(ctx)
 			if err != nil {
@@ -128,7 +129,7 @@ func (a *App) CaptionsGetSettings() (CaptionSettingsDTO, error) {
 	if err != nil {
 		return CaptionSettingsDTO{}, err
 	}
-	ok, reason, _ := captions.Availability()
+	ok, reason, _ := a.captionsAvailability()
 	downloaded := false
 	if dir, err := storage.AppDataDir(); err == nil {
 		downloaded = modelfetch.Present(filepath.Join(dir, "models"), captions.SpeechModel)
@@ -154,6 +155,56 @@ func (a *App) CaptionsAnswerModelDownload(accept bool) (CaptionSettingsDTO, erro
 		return CaptionSettingsDTO{}, err
 	}
 	return a.CaptionsGetSettings()
+}
+
+// CaptionsSetEnabled turns automatic captions on or off for uploads
+// started afterwards; a job already running finishes (FR-009). Turning
+// them on counts as agreeing to the speech-model download, which starts
+// in the background.
+func (a *App) CaptionsSetEnabled(enabled bool) (CaptionSettingsDTO, error) {
+	if err := a.requireCaptionsAvailable(); err != nil {
+		return CaptionSettingsDTO{}, err
+	}
+	if err := a.db.SetCaptionsEnabled(enabled); err != nil {
+		return CaptionSettingsDTO{}, err
+	}
+	if enabled {
+		consent, err := a.db.CaptionModelConsent()
+		if err != nil {
+			return CaptionSettingsDTO{}, err
+		}
+		if consent != storage.ConsentAccepted {
+			if err := a.db.SetCaptionModelConsent(storage.ConsentAccepted); err != nil {
+				return CaptionSettingsDTO{}, err
+			}
+		}
+		if a.captions != nil && a.ctx != nil {
+			a.captions.Prefetch(a.ctx)
+		}
+	}
+	return a.CaptionsGetSettings()
+}
+
+// CaptionsSetLanguage sets the caption language ("en" or "auto") for
+// videos captioned afterwards (FR-020).
+func (a *App) CaptionsSetLanguage(language string) (CaptionSettingsDTO, error) {
+	if err := a.requireCaptionsAvailable(); err != nil {
+		return CaptionSettingsDTO{}, err
+	}
+	if err := a.db.SetCaptionLanguage(language); err != nil {
+		return CaptionSettingsDTO{}, err
+	}
+	return a.CaptionsGetSettings()
+}
+
+func (a *App) requireCaptionsAvailable() error {
+	if a.db == nil {
+		return fmt.Errorf("captions: local database is unavailable")
+	}
+	if ok, reason, _ := a.captionsAvailability(); !ok {
+		return fmt.Errorf("captions: %s", reason)
+	}
+	return nil
 }
 
 // CaptionsGetJob returns uploadID's caption state, or null if it has none.

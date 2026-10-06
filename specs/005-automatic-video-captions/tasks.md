@@ -179,11 +179,11 @@ Windows, and Linux.
 
 ### Tests for User Story 3 ⚠️ write first, confirm they fail
 
-- [ ] T041 [P] [US3] Write `app_captions_test.go` (package `main`, temp DB): `CaptionsSetEnabled(false)` stops new jobs from being created on `UploadStart` (no job row is created); `CaptionsSetEnabled(true)` with consent `declined` flips it to `accepted`; `CaptionsSetLanguage("fr")` is rejected; a job copies the language at creation and keeps it after the setting changes; `CaptionsAnswerModelDownload(false)` cancels every `awaiting_consent` job with the note "Captions were turned off" and turns captions off.
+- [X] T041 [P] [US3] Write `app_captions_test.go` (package `main`, temp DB): `CaptionsSetEnabled(false)` stops new jobs from being created on `UploadStart` (no job row is created); `CaptionsSetEnabled(true)` with consent `declined` flips it to `accepted`; `CaptionsSetLanguage("fr")` is rejected; a job copies the language at creation and keeps it after the setting changes; `CaptionsAnswerModelDownload(false)` cancels every `awaiting_consent` job with the note "Captions were turned off" and turns captions off.
 
 ### Implementation for User Story 3
 
-- [ ] T042 [US3] Add `CaptionsSetEnabled` and `CaptionsSetLanguage` to `app.go`, with the consent rules from contracts/wails-bindings.md. Both reject when `Availability()` is not ok. Makes T041 pass.
+- [X] T042 [US3] Add `CaptionsSetEnabled` and `CaptionsSetLanguage` to `app.go`, with the consent rules from contracts/wails-bindings.md. Both reject when `Availability()` is not ok. Makes T041 pass.
 - [ ] T043 [US3] Regenerate the Wails bindings (as in T028) and add the two wrappers to `frontend/src/api/captions.ts`.
 - [ ] T044 [US3] Add an "Automatic captions" section to `frontend/src/ui/views/settings.ts` containing:
   - the switch and the "Caption language" choice (English / Automatic);
