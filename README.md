@@ -81,6 +81,31 @@ aren't available there yet. See `specs/005-automatic-video-captions/`.
   `~/Library/Application Support/ballast/captions/<job id>/` and are
   deleted when its captions finish, fail, or are cancelled.
 
+## Automatic video summaries
+
+Once a video has captions, Ballast writes a summary of it on the Mac, for
+free: an overview, the main points, quotes with times (each checked
+against the transcript), any references and calls to action the speaker
+gave, a suggested title and description, and a message ready to paste into
+a group chat. A Markdown copy is saved next to the original video, and a
+Google Doc is put next to the video in Drive once the video has arrived.
+Doubtful references are listed under "Check before sharing". See
+`specs/006-video-summaries/`.
+
+- **Engine**: [llama.cpp](https://github.com/ggml-org/llama.cpp)'s
+  `llama-server`, run on `127.0.0.1` only. It's built by the same
+  `scripts/build-engines.sh`. For `wails dev`:
+
+  ```sh
+  brew install llama.cpp
+  export BALLAST_LLAMA_SERVER=/opt/homebrew/bin/llama-server
+  ```
+
+- **Model**: a free open model of about 2.5 GB, downloaded once after a
+  one-time prompt, verified by SHA-256, and kept in
+  `~/Library/Application Support/ballast/models/`.
+- Only one AI model runs at a time: summaries wait for captions to finish.
+
 ## Development Process
 
 This project is built solo, with AI coding agents, using

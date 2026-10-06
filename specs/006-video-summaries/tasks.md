@@ -187,8 +187,8 @@ description: "Task list for Automatic Video Summaries"
 
 ## Phase 7: Polish
 
-- [ ] T045 [P] Update `README.md` (summaries, `BALLAST_LLAMA_SERVER`, model location) and `CHANGELOG.md`.
-- [ ] T046 [P] Logging audit: no transcript, summary, or share-message text in any log line from `internal/summaries` or `app_summaries.go`.
+- [X] T045 [P] Update `README.md` (summaries, `BALLAST_LLAMA_SERVER`, model location) and `CHANGELOG.md`.
+- [X] T046 [P] Logging audit: no transcript, summary, or share-message text in any log line from `internal/summaries` or `app_summaries.go`.
 - [ ] T047 Run quickstart Scenarios 1–4 for real (sermon, `Aksum.mp4`, a lecture, a 3-hour video). Record time against SC-004, memory, and quality against the references. Confirm `whisper-cli` and `llama-server` never run at once (SC-007).
 - [ ] T048 Final checks: gofmt, vet, `go test -race ./...`, tsc, Windows/Linux builds.
 

@@ -19,6 +19,18 @@ tagged releases yet, so entries are grouped by date.
   - Captioning never slows or fails an upload. If captions can't be made,
     Ballast says why.
   - Settings has an on/off switch and an English/Automatic language choice.
+- Automatic video summaries, made on your own Mac for free from each
+  video's captions.
+  - Each summary has an overview, main points, quotes with times (checked
+    against the transcript), references and calls to action when the video
+    has them, a title and description, and a message ready to share in a
+    group chat.
+  - A copy is saved next to the original video as soon as it's ready; a
+    Google Doc goes next to the video in Drive once the video has arrived.
+  - References that were unclear in the recording are listed under "Check
+    before sharing".
+  - Summaries never slow or fail an upload or its captions. A failed
+    summary can be tried again without redoing the captions.
 - Pick and upload several files at once.
 - Retry a cancelled upload, and delete finished, failed, or cancelled uploads
   from history.
