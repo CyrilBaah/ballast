@@ -106,3 +106,16 @@ func TestNotEnoughDiskForAudio(t *testing.T) {
 		t.Fatalf("job = %+v; want failed with %q", j, NoteNoDiskForAudio)
 	}
 }
+
+func TestVideoMovedBeforeCaptioning(t *testing.T) {
+	h := newHarness(t)
+	h.installFakeModel()
+	h.db.SetCaptionModelConsent(storage.ConsentAccepted)
+	u := h.newUpload("moved.mp4")
+	h.w.Enqueue(u.ID)
+	os.Remove(u.LocalPath)
+	h.w.RunUntilIdle(context.Background())
+	if j := h.job(u.ID); j.Status != storage.CaptionFailed || *j.Note != NoteVideoMissing {
+		t.Fatalf("job = %+v; a moved video must not be reported as having no audio", j)
+	}
+}

@@ -64,6 +64,7 @@ const (
 	NoteNoDiskForModel = "Not enough free disk space to download the speech model"
 	NoteUnreadable     = "Couldn't read the audio from this video"
 	NoteNoDiskForAudio = "Not enough free disk space to make captions"
+	NoteVideoMissing   = "The original video can no longer be found on this Mac"
 )
 
 // minFreeForAudio is the free space required before extracting audio. The
@@ -447,6 +448,11 @@ func (w *Worker) extract(ctx context.Context, j *storage.CaptionJob) bool {
 	dir := w.workDir(j.ID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return w.fail(j, NoteUnreadable)
+	}
+	// A moved or deleted video makes afconvert fail the same way as a video
+	// with no audio, so check it is still there first (spec edge case).
+	if _, err := os.Stat(u.LocalPath); err != nil {
+		return w.fail(j, NoteVideoMissing)
 	}
 	if free, err := w.deps.FreeSpace(dir); err == nil && free < minFreeForAudio {
 		return w.fail(j, NoteNoDiskForAudio)
