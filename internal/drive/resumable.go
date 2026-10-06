@@ -83,13 +83,18 @@ func parseDriveError(resp *http.Response) *DriveError {
 // response too (the completed-upload body SendChunk/QueryOffset parse) --
 // without it, Drive's default partial response omits webViewLink, which
 // storage.SetUploadSucceeded requires as non-empty.
-func InitiateSession(ctx context.Context, client *http.Client, apiBase, fileName, driveFolderID string, totalBytes int64) (string, *DriveError, error) {
+//
+// The file is tagged with uploadID as a private app property, so that
+// FindLandedUpload can later tell whether a session Ballast lost track of
+// actually finished on Drive's side before anything restarts it from zero.
+func InitiateSession(ctx context.Context, client *http.Client, apiBase string, uploadID int64, fileName, driveFolderID string, totalBytes int64) (string, *DriveError, error) {
 	if apiBase == "" {
 		apiBase = ProdAPIBase
 	}
 	meta := map[string]any{
-		"name":    filepath.Base(fileName),
-		"parents": []string{driveFolderID},
+		"name":          filepath.Base(fileName),
+		"parents":       []string{driveFolderID},
+		"appProperties": map[string]string{UploadIDAppProperty: strconv.FormatInt(uploadID, 10)},
 	}
 	body, err := json.Marshal(meta)
 	if err != nil {
@@ -119,6 +124,10 @@ func InitiateSession(ctx context.Context, client *http.Client, apiBase, fileName
 	}
 	return loc, nil, nil
 }
+
+// UploadIDAppProperty is the private Drive app property every uploaded
+// file carries, holding the local Upload row's ID (see InitiateSession).
+const UploadIDAppProperty = "ballastUploadId"
 
 // SendChunk PUTs the bytes [start, start+len(chunk)) of a totalBytes-long
 // file to an already-initiated session (research.md §1). Chunks MUST be
@@ -236,4 +245,61 @@ func FetchFileWebViewLink(ctx context.Context, client *http.Client, apiBase, fil
 		return "", fmt.Errorf("drive: decode webViewLink lookup response: %w", err)
 	}
 	return file.WebViewLink, nil
+}
+
+// FindLandedUpload looks for a file in driveFolderID that an earlier
+// session of upload uploadID already finished -- tagged with that ID
+// (InitiateSession), named fileName, and exactly totalBytes long. It
+// returns nil, nil when there is none. A session can complete on Drive's
+// side while Ballast never hears back (the final chunk's response is lost,
+// or a status query against the finished session comes back 404), and
+// restarting from zero at that point uploads a second copy of a file that
+// is already there.
+func FindLandedUpload(ctx context.Context, client *http.Client, apiBase string, uploadID int64, fileName, driveFolderID string, totalBytes int64) (*UploadResult, error) {
+	if apiBase == "" {
+		apiBase = ProdAPIBase
+	}
+	q := fmt.Sprintf("appProperties has { key='%s' and value='%d' } and '%s' in parents and trashed = false",
+		UploadIDAppProperty, uploadID, escapeQueryValue(driveFolderID))
+	params := url.Values{}
+	params.Set("q", q)
+	params.Set("fields", "files(id,name,size,webViewLink)")
+	params.Set("spaces", "drive")
+	reqURL := strings.TrimRight(apiBase, "/") + "/drive/v3/files?" + params.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("drive: build landed-upload lookup request: %w", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, parseDriveError(resp)
+	}
+	var list struct {
+		Files []struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			Size        string `json:"size"`
+			WebViewLink string `json:"webViewLink"`
+		} `json:"files"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		return nil, fmt.Errorf("drive: decode landed-upload lookup response: %w", err)
+	}
+	want := strconv.FormatInt(totalBytes, 10)
+	for _, f := range list.Files {
+		if f.Name == filepath.Base(fileName) && f.Size == want && f.ID != "" {
+			return &UploadResult{FileID: f.ID, WebViewLink: f.WebViewLink}, nil
+		}
+	}
+	return nil, nil
+}
+
+// escapeQueryValue escapes a value for use inside a single-quoted Drive
+// search-query string literal.
+func escapeQueryValue(v string) string {
+	return strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(v)
 }

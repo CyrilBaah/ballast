@@ -127,7 +127,7 @@ func UploadFile(ctx context.Context, client *http.Client, apiBase string, id int
 
 	if sessionURI == "" {
 		for {
-			uri, derr, terr := InitiateSession(ctx, client, apiBase, filepath.Base(localPath), driveFolderID, totalBytes)
+			uri, derr, terr := InitiateSession(ctx, client, apiBase, id, filepath.Base(localPath), driveFolderID, totalBytes)
 			if terr == nil && derr == nil {
 				sessionURI = uri
 				break

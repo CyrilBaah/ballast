@@ -129,7 +129,7 @@ func TestUploadFileResumesFromPersistedCheckpoint(t *testing.T) {
 	// build the matching content-hash-state checkpoint the same way
 	// UploadFile itself would have produced it.
 	firstLeg := int64(BaselineChunkSize)
-	uri, derr, terr := InitiateSession(context.Background(), srv.Client(), srv.URL, "upload-me.bin", "folder-1", int64(size))
+	uri, derr, terr := InitiateSession(context.Background(), srv.Client(), srv.URL, 1, "upload-me.bin", "folder-1", int64(size))
 	if terr != nil || derr != nil {
 		t.Fatalf("InitiateSession: terr=%v derr=%v", terr, derr)
 	}
@@ -187,7 +187,7 @@ func TestUploadFileRetriesQueryOffsetWhenDriveReportsNotDoneYet(t *testing.T) {
 	short := size - 100
 	path, data := makeTestFile(t, size)
 
-	uri, derr, terr := InitiateSession(context.Background(), srv.Client(), srv.URL, "upload-me.bin", "folder-1", size)
+	uri, derr, terr := InitiateSession(context.Background(), srv.Client(), srv.URL, 1, "upload-me.bin", "folder-1", size)
 	if terr != nil || derr != nil {
 		t.Fatalf("InitiateSession: terr=%v derr=%v", terr, derr)
 	}

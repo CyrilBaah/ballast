@@ -37,11 +37,14 @@ type App struct {
 	// same SQLite file, simulating a process restart without actually
 	// killing the OS process.
 	dbPath string
-	// uploadCancel stops the currently-running upload goroutine's
-	// resumable-session loop, if any. DebugRestart (E2E-test-only) calls
-	// it to simulate the current process's in-flight work dying, rather
-	// than leaving it running against a freshly-reopened DB handle.
-	uploadCancel context.CancelFunc
+	// running holds the live transfer goroutine of every upload that has
+	// one, keyed by upload ID, so an upload is only ever driven by one
+	// goroutine at a time. Two goroutines on the same row each finish
+	// their own Drive session and leave duplicate files behind. Guarded
+	// by runningMu: it is touched from Wails-bound calls and from upload
+	// goroutines alike.
+	runningMu sync.Mutex
+	running   map[int64]*uploadRun
 	// encKey encrypts token columns at rest and is loaded from the OS
 	// keychain at startup. It stays in memory only, never on disk.
 	encKey []byte
@@ -88,7 +91,7 @@ func (a *App) resetAutoRestarts() {
 
 // NewApp creates a new App application struct.
 func NewApp() *App {
-	return &App{autoRestarted: make(map[int64]bool)}
+	return &App{autoRestarted: make(map[int64]bool), running: make(map[int64]*uploadRun)}
 }
 
 // startup wires up runtime dependencies once Wails hands us a context. If
@@ -100,6 +103,12 @@ func (a *App) startup(ctx context.Context) {
 	a.revokeEndpoint = auth.GoogleRevokeEndpoint
 	a.openBrowser = browser.OpenURL
 	maybeInstallE2EMock(a)
+
+	if dir, err := storage.AppDataDir(); err != nil {
+		logging.Error("failed to resolve app data directory", "error", err)
+	} else if err := logging.LogToFile(dir); err != nil {
+		logging.Warn("could not open log file; logging to stderr only", "error", err)
+	}
 
 	if path, err := storage.DefaultPath(); err != nil {
 		logging.Error("failed to resolve local database path", "error", err)
@@ -616,15 +625,81 @@ func (a *App) startNewUpload(localPath, driveFolderId, driveFolderName string) (
 	return u.ID, nil
 }
 
+// uploadRun is one live transfer goroutine for an upload.
+type uploadRun struct {
+	cancel context.CancelFunc
+}
+
 // startUpload launches runUpload in the background under a context
-// derived from the app's lifetime context, remembering its cancel func so
-// DebugRestart (E2E-test-only) can stop it -- simulating the current
-// process's in-flight work dying on a "restart" without needing to
-// actually kill the OS process.
-func (a *App) startUpload(id int64, client *http.Client, localPath, driveFolderID string, totalBytes int64, baseline drive.IdentityBaseline, resume drive.ResumeState) {
+// derived from the app's lifetime context, unless the upload already has
+// a live transfer goroutine -- in which case it does nothing and returns
+// false. The cancel func is remembered so UploadCancel and DebugRestart
+// (E2E-test-only) can stop it.
+func (a *App) startUpload(id int64, client *http.Client, localPath, driveFolderID string, totalBytes int64, baseline drive.IdentityBaseline, resume drive.ResumeState) bool {
+	return a.launchUpload(id, nil, client, localPath, driveFolderID, totalBytes, baseline, resume)
+}
+
+// launchUpload is startUpload, except that the upload's live run may be
+// handed over from prev -- a goroutine that is restarting its own upload
+// on its way out (restartExpiredSession) -- rather than refused.
+func (a *App) launchUpload(id int64, prev *uploadRun, client *http.Client, localPath, driveFolderID string, totalBytes int64, baseline drive.IdentityBaseline, resume drive.ResumeState) bool {
 	ctx, cancel := context.WithCancel(a.ctx)
-	a.uploadCancel = cancel
-	go a.runUpload(ctx, id, client, localPath, driveFolderID, totalBytes, baseline, resume)
+	run := &uploadRun{cancel: cancel}
+
+	a.runningMu.Lock()
+	if cur := a.running[id]; cur != nil && cur != prev {
+		a.runningMu.Unlock()
+		cancel()
+		logging.Warn("upload already has a live transfer; not starting a second one", "uploadId", id)
+		return false
+	}
+	a.running[id] = run
+	a.runningMu.Unlock()
+
+	go a.runUpload(ctx, run, id, client, localPath, driveFolderID, totalBytes, baseline, resume)
+	return true
+}
+
+// finishRun drops run from the live set once its goroutine is done,
+// unless it has already handed the upload over to a newer run.
+func (a *App) finishRun(id int64, run *uploadRun) {
+	run.cancel()
+	a.runningMu.Lock()
+	defer a.runningMu.Unlock()
+	if a.running[id] == run {
+		delete(a.running, id)
+	}
+}
+
+// uploadIsRunning reports whether some goroutine other than self is
+// currently driving upload id (self may be nil).
+func (a *App) uploadIsRunning(id int64, self *uploadRun) bool {
+	a.runningMu.Lock()
+	defer a.runningMu.Unlock()
+	cur := a.running[id]
+	return cur != nil && cur != self
+}
+
+// stopUpload cancels upload id's live transfer goroutine, if it has one.
+func (a *App) stopUpload(id int64) {
+	a.runningMu.Lock()
+	run := a.running[id]
+	delete(a.running, id)
+	a.runningMu.Unlock()
+	if run != nil {
+		run.cancel()
+	}
+}
+
+// stopAllUploads cancels every live transfer goroutine.
+func (a *App) stopAllUploads() {
+	a.runningMu.Lock()
+	runs := a.running
+	a.running = make(map[int64]*uploadRun)
+	a.runningMu.Unlock()
+	for _, run := range runs {
+		run.cancel()
+	}
 }
 
 // runUpload drives one upload's resumable session to a terminal outcome
@@ -633,7 +708,9 @@ func (a *App) startUpload(id int64, client *http.Client, localPath, driveFolderI
 // emitted against the app's lifetime context. It keeps going after the
 // call that launched it has already returned; resume is the checkpoint to
 // continue from (zero value for a brand-new upload).
-func (a *App) runUpload(ctx context.Context, id int64, client *http.Client, localPath, driveFolderID string, totalBytes int64, baseline drive.IdentityBaseline, resume drive.ResumeState) {
+func (a *App) runUpload(ctx context.Context, run *uploadRun, id int64, client *http.Client, localPath, driveFolderID string, totalBytes int64, baseline drive.IdentityBaseline, resume drive.ResumeState) {
+	defer a.finishRun(id, run)
+
 	cb := drive.UploadCallbacks{
 		OnChunkAcked: func(bytesSent int64, sessionURI string, hashState []byte, chunkSize int64, consecutiveSuccesses int) {
 			if err := a.db.UpdateUploadProgress(id, bytesSent, sessionURI, hashState, chunkSize, consecutiveSuccesses); err != nil {
@@ -662,7 +739,7 @@ func (a *App) runUpload(ctx context.Context, id int64, client *http.Client, loca
 			case drive.TerminalNeedsSignIn:
 				a.holdForSignIn(id, outcome.Reason)
 			case drive.TerminalRecoverable:
-				if outcome.Reason == drive.ReasonSessionExpired && a.restartExpiredSession(id) {
+				if outcome.Reason == drive.ReasonSessionExpired && a.restartExpiredSession(id, run) {
 					return
 				}
 				if setErr := a.db.SetUploadAwaitingConfirmation(id, outcome.Reason); setErr != nil {
@@ -730,7 +807,16 @@ func (a *App) stillTheSameFile(u *storage.Upload) (bool, error) {
 // The row is moved to awaiting_confirmation before the reset, both to
 // reuse ResetUploadForRestart's guard and so that a crash mid-restart
 // leaves a state the next launch recognises and picks up here again.
-func (a *App) restartExpiredSession(id int64) bool {
+//
+// self is the transfer goroutine calling this on its way out, or nil when
+// called from outside one; any other live goroutine on this upload already
+// owns it, so this leaves it alone. Before restarting from zero it asks
+// Drive whether the "dropped" session in fact finished, and if so records
+// that file instead of uploading a second copy.
+func (a *App) restartExpiredSession(id int64, self *uploadRun) bool {
+	if a.uploadIsRunning(id, self) {
+		return true
+	}
 	u, err := a.db.GetUpload(id)
 	if err != nil {
 		logging.Warn("could not read upload while restarting an expired session", "uploadId", id, "error", err)
@@ -773,6 +859,9 @@ func (a *App) restartExpiredSession(id int64) bool {
 		events.EmitUploadFailed(a.ctx, id, reason)
 		return true
 	}
+	if a.adoptLandedUpload(client, u) {
+		return true
+	}
 	// Claimed only once everything else is ready, so a restart that never
 	// happened doesn't spend the allowance for one that could.
 	if !a.claimAutoRestart(id) {
@@ -803,7 +892,30 @@ func (a *App) restartExpiredSession(id int64) bool {
 
 	baseline := drive.IdentityBaseline{Size: info.Size(), Mtime: info.ModTime()}
 	resume := drive.ResumeState{ChunkSize: u.ChunkSizeBytes, ConsecutiveSuccesses: u.ConsecutiveChunkSuccesses}
-	a.startUpload(id, client, u.LocalPath, u.DriveFolderID, info.Size(), baseline, resume)
+	a.launchUpload(id, self, client, u.LocalPath, u.DriveFolderID, info.Size(), baseline, resume)
+	return true
+}
+
+// adoptLandedUpload checks whether upload u's file already finished
+// landing in Drive under a session Ballast lost track of, and if so
+// records it as the upload's result and reports true, so the caller does
+// not restart it from zero. A failed lookup reports false: the restart
+// goes ahead, as it would have without the check.
+func (a *App) adoptLandedUpload(client *http.Client, u *storage.Upload) bool {
+	res, err := drive.FindLandedUpload(a.ctx, client, a.driveUploadAPIBase(), u.ID, u.LocalPath, u.DriveFolderID, u.LocalSizeBytes)
+	if err != nil {
+		logging.Warn("could not check Drive for an already-finished copy before restarting", "uploadId", u.ID, "error", err)
+		return false
+	}
+	if res == nil {
+		return false
+	}
+	if err := a.db.SetUploadSucceeded(u.ID, res.FileID, res.WebViewLink); err != nil {
+		logging.Warn("failed to record an upload Drive had already finished", "uploadId", u.ID, "error", err)
+		return false
+	}
+	logging.Info("upload had already finished on Drive; keeping that file instead of re-sending", "uploadId", u.ID, "driveFileId", res.FileID)
+	events.EmitUploadComplete(a.ctx, u.ID, res.WebViewLink)
 	return true
 }
 
@@ -878,15 +990,20 @@ func (a *App) UploadGetRecoverable() (*RecoverableUploadDTO, error) {
 	if u == nil {
 		return nil, nil
 	}
+	// A row this process is already transferring is not a leftover: it can
+	// read as paused while its goroutine waits out a network drop, and
+	// starting it again here would race a second session against the first.
+	live := a.uploadIsRunning(u.ID, nil)
 
 	// An upload left waiting on a session Drive has already dropped has
 	// nothing to wait for -- there is no offset to resume against and only
 	// one way for the file to land. Restart it here rather than greeting
 	// the user with a question whose only answer is yes.
-	if u.Status == storage.UploadAwaitingConfirmation &&
+	if !live &&
+		u.Status == storage.UploadAwaitingConfirmation &&
 		u.AwaitingConfirmationReason != nil &&
 		*u.AwaitingConfirmationReason == storage.AwaitingConfirmationSessionExpired &&
-		a.restartExpiredSession(u.ID) {
+		a.restartExpiredSession(u.ID, nil) {
 		refreshed, rerr := a.db.GetUpload(u.ID)
 		if rerr != nil {
 			return nil, rerr
@@ -894,7 +1011,7 @@ func (a *App) UploadGetRecoverable() (*RecoverableUploadDTO, error) {
 		u = refreshed
 	}
 
-	if u.Status == storage.UploadPaused {
+	if !live && u.Status == storage.UploadPaused {
 		client, cerr := a.driveHTTPClient(a.ctx)
 		if cerr != nil {
 			return nil, cerr
@@ -963,6 +1080,9 @@ func (a *App) UploadConfirmRestart(id int64) error {
 	if u.Status != storage.UploadAwaitingConfirmation {
 		return fmt.Errorf("upload: cannot restart an upload that is not awaiting confirmation")
 	}
+	if a.uploadIsRunning(id, nil) {
+		return fmt.Errorf("upload: this upload is already transferring")
+	}
 
 	info, err := os.Stat(u.LocalPath)
 	if err != nil {
@@ -977,6 +1097,13 @@ func (a *App) UploadConfirmRestart(id int64) error {
 	client, err := a.driveHTTPClient(a.ctx)
 	if err != nil {
 		return err
+	}
+	// A file that changed may still match the old copy's name and size, so
+	// only an expired session is checked for having quietly finished.
+	if u.AwaitingConfirmationReason != nil &&
+		*u.AwaitingConfirmationReason == storage.AwaitingConfirmationSessionExpired &&
+		a.adoptLandedUpload(client, u) {
+		return nil
 	}
 	// Release the old session before abandoning it locally -- otherwise it
 	// can still complete independently on Drive's side later, leaving an
@@ -1007,6 +1134,15 @@ func (a *App) UploadCancel(id int64) error {
 	if err != nil {
 		return err
 	}
+	// Checked before touching the session: releasing the session of an
+	// upload that cannot be cancelled would leave its transfer reading the
+	// released session as expired and restarting from zero.
+	if u.Status != storage.UploadPaused && u.Status != storage.UploadAwaitingConfirmation {
+		return storage.ErrUploadNotCancellable
+	}
+	// Stop the transfer goroutine before releasing its session, for the
+	// same reason.
+	a.stopUpload(id)
 	if u.SessionURI != nil {
 		if client, cerr := a.driveHTTPClient(a.ctx); cerr == nil {
 			drive.ReleaseSession(a.ctx, client, *u.SessionURI)
@@ -1041,10 +1177,7 @@ func (a *App) DebugRestart() error {
 	if a.driveAPIEndpointOverride == "" {
 		return fmt.Errorf("debug: DebugRestart is only available in E2E mock mode")
 	}
-	if a.uploadCancel != nil {
-		a.uploadCancel()
-		a.uploadCancel = nil
-	}
+	a.stopAllUploads()
 	if a.db != nil {
 		if err := a.db.Close(); err != nil {
 			logging.Warn("error closing database during DebugRestart", "error", err)
