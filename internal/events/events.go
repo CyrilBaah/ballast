@@ -17,6 +17,9 @@ const (
 	UploadAwaitingConfirm = "upload:awaiting-confirmation"
 	UploadComplete        = "upload:complete"
 	UploadFailed          = "upload:failed"
+
+	CaptionsConsentNeeded = "captions:consent-needed"
+	CaptionsUpdated       = "captions:updated"
 )
 
 // AuthStatus is the payload of AuthChanged, also returned by Auth.GetStatus/Auth.SignIn.
@@ -113,4 +116,36 @@ func EmitUploadAwaitingConfirmation(ctx context.Context, id int64, reason string
 		ID:     id,
 		Reason: reason,
 	})
+}
+
+// CaptionJob is one video's captioning state as the frontend sees it --
+// the payload of CaptionsUpdated, and the CaptionJobDTO of Feature 005's
+// contracts/wails-bindings.md. Optional fields are omitted when unset.
+type CaptionJob struct {
+	UploadID        int64  `json:"uploadId"`
+	Status          string `json:"status"`
+	Phase           string `json:"phase,omitempty"`
+	ProgressPercent int    `json:"progressPercent"`
+	Language        string `json:"language"`
+	DriveFileName   string `json:"driveFileName,omitempty"`
+	DriveFileLink   string `json:"driveFileLink,omitempty"`
+	LocalCopyPath   string `json:"localCopyPath,omitempty"`
+	Note            string `json:"note,omitempty"`
+}
+
+// CaptionsConsentNeededPayload is the payload of CaptionsConsentNeeded.
+type CaptionsConsentNeededPayload struct {
+	ModelSizeBytes int64 `json:"modelSizeBytes"`
+}
+
+// EmitCaptionsUpdated sends a caption job's full current state, so the
+// frontend never has to merge partial updates.
+func EmitCaptionsUpdated(ctx context.Context, job CaptionJob) {
+	runtime.EventsEmit(ctx, CaptionsUpdated, job)
+}
+
+// EmitCaptionsConsentNeeded asks the frontend to show the one-time
+// speech-model download prompt (FR-019).
+func EmitCaptionsConsentNeeded(ctx context.Context, modelSizeBytes int64) {
+	runtime.EventsEmit(ctx, CaptionsConsentNeeded, CaptionsConsentNeededPayload{ModelSizeBytes: modelSizeBytes})
 }
