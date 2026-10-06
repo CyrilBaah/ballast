@@ -33,7 +33,7 @@ description: "Task list for Automatic Video Summaries"
 ## Phase 1: Setup and model choice
 
 - [X] T001 Extend `scripts/build-engines.sh` to also build llama.cpp's `llama-server` from a pinned release tag (record it), as a static arm64 binary with Metal (`-DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF`), into `build/engines/llama-server`, and copy it into the app bundle with `--bundle` (research.md §15).
-- [ ] T002 [P] Create the `internal/summaries` package with `doc.go`, and a fake llama-server for tests: an `httptest` server speaking `/health` and `/v1/chat/completions`, returning scripted JSON per request, recording each request body, and able to return invalid JSON, hang, or 500 on demand (`internal/summaries/fake_server_test.go`).
+- [X] T002 [P] Create the `internal/summaries` package with `doc.go`, and a fake llama-server for tests: an `httptest` server speaking `/health` and `/v1/chat/completions`, returning scripted JSON per request, recording each request body, and able to return invalid JSON, hang, or 500 on demand (`internal/summaries/fake_server_test.go`).
 - [X] T003 [P] Add the reference summaries to `internal/summaries/testdata/`: *(Kept in git-ignored `testdata/private/`: the sermon and the documentary narration aren't ours to publish in a public repo. Unit tests use short made-up transcripts instead.)*
   - `reference-sermon-2026-10-04.md`: the summary shared to the church group on 2026-10-06;
   - `transcript-sermon-2026-10-04.srt`: the real 43-minute transcript;
@@ -83,7 +83,7 @@ description: "Task list for Automatic Video Summaries"
   - "Check before sharing" appears only when there are guesses, and never inside the share message;
   - quote times are shown as `h:mm:ss`;
   - HTML escapes model text.
-- [ ] T015 [P] [US1] `internal/summaries/local_test.go`, against the fake server (T002):
+- [X] T015 [P] [US1] `internal/summaries/local_test.go`, against the fake server (T002):
   - the request uses `response_format` `json_schema` with the §3 schema;
   - a short transcript makes a single request;
   - a long one makes N part requests and one combine request;
@@ -107,9 +107,9 @@ description: "Task list for Automatic Video Summaries"
 - [X] T019 [P] [US1] `internal/summaries/transcript.go` (makes T011 pass).
 - [X] T020 [P] [US1] `internal/summaries/verify.go`, including the 66-book list (makes T012 pass).
 - [X] T021 [P] [US1] `internal/summaries/share.go` (makes T013 pass).
-- [ ] T022 [P] [US1] `internal/summaries/prompt.go`: general-purpose system prompts for part notes, combine, and single pass, with no worked example (research.md §12).
+- [X] T022 [P] [US1] `internal/summaries/prompt.go`: general-purpose system prompts for part notes, combine, and single pass, with no worked example (research.md §12).
 - [X] T023 [P] [US1] `internal/summaries/render.go` (makes T014 pass).
-- [ ] T024 [US1] `internal/summaries/server.go` and `local.go`:
+- [X] T024 [US1] `internal/summaries/server.go` and `local.go`:
   - start `llama-server -m <model> -c 16384 --host 127.0.0.1 --port <free>`, lower its priority, wait for `/health`, and kill it on ctx cancel or when the job ends;
   - `localSummarizer` runs a single pass, or parts then combine, through `/v1/chat/completions` with `json_schema`;
   - makes T015 pass.
