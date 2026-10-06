@@ -58,6 +58,15 @@ compiled into Ballast. A file that does not match is never used.
 multilingual version is required for the "Automatic" language choice
 (FR-020); English-only `.en` models cannot detect other languages.
 
+**Measured (2026-10-06, Apple M2, 8 GB, Homebrew whisper.cpp 1.9.4)**: a
+43-minute sermon (`Paster Joseph Ayertey.mp4`, 13 GB HEVC) was transcribed
+in 4 min 33 s (about 10× real time) with a peak of 2.3 GB memory, using
+the GPU. `ggml-large-v3-turbo.bin` fetched from `resolve/main` was
+1,624,555,275 bytes, SHA-256
+`1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69`.
+T019 must still pin a specific repository revision and confirm these
+values against it.
+
 **To confirm during implementation**:
 - The pinned revision, size, and SHA-256. They are recorded when the
   download code is written; none are invented here.
@@ -142,6 +151,16 @@ identical text into one (keeping the first cue's start and the last
 cue's end). A transcript with no cues left is "no speech found": the job
 ends as done with that note, and no caption file is uploaded (spec edge
 case).
+
+**Measured on a real sermon**: transcribing the whole 43-minute file in
+one run (default settings) produced a repetition loop. "I wonder what will
+happen to you?" repeated from 36:58 to the end, hiding the last 7 minutes.
+From about 13:45, cues also collapsed into single words. Re-running the
+tail with `-mc 0` (no text context carried between segments) recovered the
+real content, with one shorter loop left (38:58–39:28). **Decision**: always
+pass `-mc 0` as well as transcribing in ~10-minute pieces (§4). Keep the
+repeat-collapse as a safety net, and treat a long run of identical
+sentences *within* one cue as a repetition too.
 
 **Rationale**: Church recordings contain long stretches of worship music,
 where large Whisper models are known to produce repeated or invented
