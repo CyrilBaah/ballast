@@ -52,7 +52,38 @@ CREATE TABLE IF NOT EXISTS upload (
 );
 `
 
-const schema = schemaAccountTable + schemaUploadTable
+// schemaCaptionTables holds Feature 005's tables (its data-model.md):
+// one caption_job per upload, removed with it, and a small key/value
+// setting table for app-wide preferences. Both are new, so plain
+// CREATE TABLE IF NOT EXISTS is the whole migration.
+const schemaCaptionTables = `
+CREATE TABLE IF NOT EXISTS caption_job (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	upload_id INTEGER NOT NULL UNIQUE REFERENCES upload(id) ON DELETE CASCADE,
+	status TEXT NOT NULL CHECK (status IN ('waiting', 'in_progress', 'done', 'failed', 'cancelled')),
+	phase TEXT CHECK (phase IN ('awaiting_consent', 'downloading_model', 'extracting_audio', 'transcribing', 'waiting_for_video', 'uploading_captions') OR phase IS NULL),
+	language TEXT NOT NULL CHECK (language IN ('en', 'auto')),
+	progress_percent INTEGER NOT NULL DEFAULT 0,
+	audio_duration_ms INTEGER,
+	piece_count INTEGER,
+	pieces_done INTEGER NOT NULL DEFAULT 0,
+	drive_file_id TEXT,
+	drive_file_link TEXT,
+	drive_file_name TEXT,
+	local_copy_path TEXT,
+	note TEXT,
+	created_at DATETIME NOT NULL,
+	updated_at DATETIME NOT NULL,
+	ended_at DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS setting (
+	key TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
+`
+
+const schema = schemaAccountTable + schemaUploadTable + schemaCaptionTables
 
 // ensureSchema creates the account/upload tables if they don't already
 // exist, then upgrades an existing pre-Feature-002 or pre-Feature-003
